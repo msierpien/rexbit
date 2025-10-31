@@ -29,7 +29,7 @@ class IntegrationPolicy
      */
     public function create(User $user): bool
     {
-        return $user->hasRole(Role::ADMIN);
+        return $user->hasRole(Role::ADMIN) || $user->hasRole(Role::USER);
     }
 
     /**

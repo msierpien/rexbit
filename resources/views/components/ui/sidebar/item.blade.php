@@ -49,6 +49,13 @@
                     </svg>
                     @break
 
+                @case('link')
+                    <svg class="{{ $iconClasses }}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-3.9 3.9a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M10.81 15.312a4.5 4.5 0 0 1-1.242-7.244l3.9-3.9a4.5 4.5 0 0 1 6.364 6.364l-1.757 1.757" />
+                    </svg>
+                    @break
+
                 @default
                     {{ $icon }}
             @endswitch

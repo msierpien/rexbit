@@ -28,7 +28,9 @@ class PrestashopIntegrationDriver implements IntegrationDriver
         return [
             'name' => ['required', 'string', 'max:255'],
             'base_url' => ['required', 'url'],
-            'api_key' => ['required', 'string', 'min:8'],
+            'api_key' => $integration
+                ? ['nullable', 'string', 'min:8']
+                : ['required', 'string', 'min:8'],
         ];
     }
 
@@ -50,10 +52,15 @@ class PrestashopIntegrationDriver implements IntegrationDriver
     {
         $baseUrl = rtrim((string) Arr::get($config, 'base_url', ''), '/');
 
-        return [
+        $normalized = [
             'base_url' => $baseUrl,
-            'api_key' => trim((string) Arr::get($config, 'api_key', '')),
         ];
+
+        if (Arr::has($config, 'api_key')) {
+            $normalized['api_key'] = trim((string) Arr::get($config, 'api_key', ''));
+        }
+
+        return $normalized;
     }
 
     /**

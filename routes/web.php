@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\IntegrationController;
 use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\AdminDashboardController;
 use App\Http\Controllers\AuthController;
@@ -22,6 +23,13 @@ Route::post('/logout', [AuthController::class, 'destroy'])
 
 Route::middleware(['auth', 'role:user,admin'])->group(function (): void {
     Route::get('/dashboard', UserDashboardController::class)->name('dashboard.user');
+
+    Route::resource('/integrations', IntegrationController::class)
+        ->except(['show'])
+        ->names('integrations');
+
+    Route::post('/integrations/{integration}/test', [IntegrationController::class, 'test'])
+        ->name('integrations.test');
 });
 
 Route::middleware(['auth', 'role:admin'])->group(function (): void {

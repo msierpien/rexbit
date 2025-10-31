@@ -10,6 +10,8 @@ use App\Models\Integration;
 use App\Models\User;
 use Illuminate\Contracts\Validation\Factory as ValidationFactory;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Crypt;
 
 class IntegrationService
 {
@@ -37,7 +39,7 @@ class IntegrationService
         $driver = $this->driver($type);
 
         $payload = $this->validatePayload($driver, $attributes);
-        $config = $driver->sanitizeConfig($payload);
+        $config = $this->prepareConfigForStorage($driver, $payload);
 
         $integration = new Integration([
             'name' => $payload['name'],
@@ -64,7 +66,7 @@ class IntegrationService
 
         $integration->fill([
             'name' => $payload['name'],
-            'config' => $driver->sanitizeConfig($payload),
+            'config' => $this->prepareConfigForStorage($driver, $payload, $integration),
         ])->save();
 
         return $integration->refresh();
@@ -79,7 +81,9 @@ class IntegrationService
     {
         $driver = $this->driver($integration->type);
 
-        $success = $driver->testConnection($integration->config ?? []);
+        $config = $this->decryptConfigForRuntime($integration, $driver);
+
+        $success = $driver->testConnection($config);
 
         if ($success) {
             $integration->forceFill([
@@ -117,5 +121,53 @@ class IntegrationService
             $attributes,
             $driver->validationRules($integration)
         )->validate();
+    }
+
+    /**
+     * Prepare configuration payload for storage by encrypting sensitive values.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    protected function prepareConfigForStorage(IntegrationDriver $driver, array $payload, ?Integration $integration = null): array
+    {
+        $sanitized = $driver->sanitizeConfig($payload);
+        $existing = $integration?->config ?? [];
+
+        $config = array_merge($existing, Arr::except($sanitized, ['api_key']));
+
+        $apiKey = Arr::get($sanitized, 'api_key');
+
+        if ($apiKey) {
+            $config['api_key'] = Crypt::encryptString($apiKey);
+        } elseif ($integration && isset($existing['api_key'])) {
+            $config['api_key'] = $existing['api_key'];
+        }
+
+        return $config;
+    }
+
+    /**
+     * Retrieve configuration for runtime use (with decrypted secrets).
+     *
+     * @return array<string, mixed>
+     */
+    protected function decryptConfigForRuntime(Integration $integration, IntegrationDriver $driver): array
+    {
+        $config = $integration->config ?? [];
+
+        if (isset($config['api_key'])) {
+            try {
+                $config['api_key'] = Crypt::decryptString($config['api_key']);
+            } catch (\Throwable $exception) {
+                throw new IntegrationConnectionException(
+                    'Nie udało się odszyfrować klucza API integracji.',
+                    (int) $exception->getCode(),
+                    $exception
+                );
+            }
+        }
+
+        return $driver->sanitizeConfig($config);
     }
 }

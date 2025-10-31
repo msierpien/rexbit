@@ -31,7 +31,7 @@ class Integration extends Model
     protected $casts = [
         'type' => IntegrationType::class,
         'status' => IntegrationStatus::class,
-        'config' => 'encrypted:array',
+        'config' => 'array',
         'meta' => 'array',
         'last_synced_at' => 'datetime',
     ];

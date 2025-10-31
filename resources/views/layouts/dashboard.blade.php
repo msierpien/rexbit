@@ -41,6 +41,13 @@
                 'visible' => $roleValue === 'admin',
             ],
             [
+                'label' => 'Integracje',
+                'icon' => 'link',
+                'route' => route('integrations.index'),
+                'active' => request()->routeIs('integrations.*'),
+                'visible' => in_array($roleValue, ['admin', 'user'], true),
+            ],
+            [
                 'label' => 'Panel użytkownika',
                 'icon' => 'user',
                 'route' => route('dashboard.user'),
