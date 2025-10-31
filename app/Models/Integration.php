@@ -4,9 +4,11 @@ namespace App\Models;
 
 use App\Enums\IntegrationStatus;
 use App\Enums\IntegrationType;
+use App\Models\IntegrationImportProfile;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Integration extends Model
 {
@@ -42,5 +44,10 @@ class Integration extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function importProfiles(): HasMany
+    {
+        return $this->hasMany(IntegrationImportProfile::class);
     }
 }

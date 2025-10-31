@@ -27,6 +27,7 @@ class PrestashopIntegrationDriver implements IntegrationDriver
     {
         return [
             'name' => ['required', 'string', 'max:255'],
+            'description' => ['nullable', 'string', 'max:500'],
             'base_url' => ['required', 'url'],
             'api_key' => $integration
                 ? ['nullable', 'string', 'min:8']
@@ -40,6 +41,7 @@ class PrestashopIntegrationDriver implements IntegrationDriver
     public function defaultConfig(): array
     {
         return [
+            'description' => null,
             'base_url' => '',
             'api_key' => '',
         ];
@@ -53,6 +55,7 @@ class PrestashopIntegrationDriver implements IntegrationDriver
         $baseUrl = rtrim((string) Arr::get($config, 'base_url', ''), '/');
 
         $normalized = [
+            'description' => Arr::get($config, 'description'),
             'base_url' => $baseUrl,
         ];
 

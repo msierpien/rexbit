@@ -57,7 +57,7 @@
         </x-ui.card>
 
         <x-ui.card title="Konfiguracja integracji">
-            <form method="POST" action="{{ route('integrations.update', $integration) }}" class="space-y-6">
+            <form method="POST" action="{{ route('integrations.update', $integration) }}" class="space-y-6" id="integration-edit-form">
                 @csrf
                 @method('PUT')
 
@@ -69,22 +69,37 @@
                 />
 
                 <x-ui.input
-                    label="Adres podstawowy sklepu (Base URL)"
-                    name="base_url"
-                    :value="old('base_url', $integration->config['base_url'] ?? '')"
-                    required
+                    label="Opis"
+                    name="description"
+                    :value="old('description', $integration->config['description'] ?? '')"
+                    placeholder="Opcjonalny opis integracji"
                 />
 
-                <x-ui.input
-                    label="Klucz API"
-                    name="api_key"
-                    :value="old('api_key')"
-                    required
-                />
+                @if ($integration->type->value === \App\Enums\IntegrationType::PRESTASHOP->value)
+                    <div data-driver-fields="prestashop" class="space-y-6">
+                        <x-ui.input
+                            label="Adres podstawowy sklepu (Base URL)"
+                            name="base_url"
+                            :value="old('base_url', $integration->config['base_url'] ?? '')"
+                            placeholder="https://twoj-sklep.pl"
+                        />
 
-                <p class="text-xs text-gray-500 dark:text-gray-400">
-                    Pozostaw pole puste, aby zachować obecny klucz API.
-                </p>
+                        <x-ui.input
+                            label="Klucz API"
+                            name="api_key"
+                            :value="old('api_key')"
+                            placeholder="Pozostaw puste aby zachować obecny klucz"
+                        />
+
+                        <p class="text-xs text-gray-500 dark:text-gray-400">
+                            Pozostaw pole puste, aby zachować obecny klucz API.
+                        </p>
+                    </div>
+                @else
+                    <x-ui.alert variant="info">
+                        Ta integracja wykorzystuje profile importu CSV/XML. Skonfiguruj źródła oraz mapowanie w sekcji poniżej.
+                    </x-ui.alert>
+                @endif
 
                 <div class="flex items-center gap-3">
                     <x-ui.button type="submit">
@@ -97,5 +112,9 @@
                 </div>
             </form>
         </x-ui.card>
+
+        @if ($integration->type === \App\Enums\IntegrationType::CSV_XML_IMPORT)
+            @include('dashboard.admin.integrations.partials.csv-import-profiles', ['integration' => $integration])
+        @endif
     </div>
 @endsection

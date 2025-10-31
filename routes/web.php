@@ -5,6 +5,7 @@ use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\AdminDashboardController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ContractorController;
+use App\Http\Controllers\IntegrationImportProfileController;
 use App\Http\Controllers\ManufacturerController;
 use App\Http\Controllers\ProductCatalogController;
 use App\Http\Controllers\ProductCategoryController;
@@ -39,6 +40,19 @@ Route::middleware(['auth', 'role:user,admin'])->group(function (): void {
 
     Route::post('/integrations/{integration}/test', [IntegrationController::class, 'test'])
         ->name('integrations.test');
+
+    Route::post('/integrations/{integration}/import-profiles', [IntegrationImportProfileController::class, 'store'])
+        ->name('integrations.import-profiles.store');
+    Route::put('/integrations/{integration}/import-profiles/{profile}', [IntegrationImportProfileController::class, 'update'])
+        ->name('integrations.import-profiles.update');
+    Route::delete('/integrations/{integration}/import-profiles/{profile}', [IntegrationImportProfileController::class, 'destroy'])
+        ->name('integrations.import-profiles.destroy');
+    Route::post('/integrations/{integration}/import-profiles/{profile}/refresh-headers', [IntegrationImportProfileController::class, 'refreshHeaders'])
+        ->name('integrations.import-profiles.refresh');
+    Route::post('/integrations/{integration}/import-profiles/{profile}/run', [IntegrationImportProfileController::class, 'run'])
+        ->name('integrations.import-profiles.run');
+    Route::post('/integrations/{integration}/import-profiles/{profile}/mappings', [IntegrationImportProfileController::class, 'mappings'])
+        ->name('integrations.import-profiles.mappings');
 
     Route::resource('/products', ProductController::class)
         ->names('products')

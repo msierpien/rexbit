@@ -77,13 +77,14 @@ class IntegrationController extends Controller
      */
     public function edit(Integration $integration): View
     {
-        $driver = $this->service->driver($integration->type);
-        $types = IntegrationType::cases();
+        $integration->load([
+            'user.productCatalogs' => fn ($query) => $query->orderBy('name'),
+            'importProfiles.mappings',
+            'importProfiles.runs' => fn ($query) => $query->latest()->take(5),
+        ]);
 
         return view('dashboard.admin.integrations.edit', [
             'integration' => $integration,
-            'driver' => $driver,
-            'types' => $types,
         ]);
     }
 
