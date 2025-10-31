@@ -7,6 +7,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ContractorController;
 use App\Http\Controllers\IntegrationImportProfileController;
 use App\Http\Controllers\ManufacturerController;
+use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ProductCatalogController;
 use App\Http\Controllers\ProductCategoryController;
 use App\Http\Controllers\ProductController;
@@ -57,6 +58,7 @@ Route::middleware(['auth', 'role:user,admin'])->group(function (): void {
     Route::resource('/products', ProductController::class)
         ->names('products')
         ->except(['show']);
+    Route::get('/notifications', NotificationController::class)->name('notifications.index');
     Route::resource('/product-categories', ProductCategoryController::class)
         ->names('product-categories')
         ->except(['show']);

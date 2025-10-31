@@ -6,7 +6,8 @@ use App\Models\ProductCatalog;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
-use Illuminate\View\View;
+use Inertia\Inertia;
+use Inertia\Response;
 
 class ProductCatalogController extends Controller
 {
@@ -16,16 +17,32 @@ class ProductCatalogController extends Controller
         $this->authorizeResource(ProductCatalog::class, 'product_catalog');
     }
 
-    public function index(Request $request): View
+    public function index(Request $request): Response
     {
-        $catalogs = $request->user()->productCatalogs()->withCount(['products'])->orderBy('name')->paginate(15);
+        $catalogs = $request->user()->productCatalogs()
+            ->withCount(['products'])
+            ->orderBy('name')
+            ->paginate(15)
+            ->withQueryString()
+            ->through(fn (ProductCatalog $catalog) => [
+                'id' => $catalog->id,
+                'name' => $catalog->name,
+                'slug' => $catalog->slug,
+                'description' => $catalog->description,
+                'products_count' => $catalog->products_count,
+            ]);
 
-        return view('catalog.catalogs.index', compact('catalogs'));
+        return Inertia::render('Products/Catalogs/Index', [
+            'catalogs' => $catalogs,
+            'can' => [
+                'create' => $request->user()->can('create', ProductCatalog::class),
+            ],
+        ]);
     }
 
-    public function create(): View
+    public function create(): Response
     {
-        return view('catalog.catalogs.create');
+        return Inertia::render('Products/Catalogs/Create');
     }
 
     public function store(Request $request): RedirectResponse
@@ -37,9 +54,16 @@ class ProductCatalogController extends Controller
         return redirect()->route('product-catalogs.edit', $catalog)->with('status', 'Katalog został utworzony.');
     }
 
-    public function edit(ProductCatalog $product_catalog): View
+    public function edit(ProductCatalog $product_catalog): Response
     {
-        return view('catalog.catalogs.edit', ['catalog' => $product_catalog]);
+        return Inertia::render('Products/Catalogs/Edit', [
+            'catalog' => [
+                'id' => $product_catalog->id,
+                'name' => $product_catalog->name,
+                'slug' => $product_catalog->slug,
+                'description' => $product_catalog->description,
+            ],
+        ]);
     }
 
     public function update(Request $request, ProductCatalog $product_catalog): RedirectResponse

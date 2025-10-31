@@ -6,7 +6,8 @@ use App\Models\Manufacturer;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
-use Illuminate\View\View;
+use Inertia\Inertia;
+use Inertia\Response;
 
 class ManufacturerController extends Controller
 {
@@ -16,16 +17,32 @@ class ManufacturerController extends Controller
         $this->authorizeResource(Manufacturer::class, 'manufacturer');
     }
 
-    public function index(Request $request): View
+    public function index(Request $request): Response
     {
-        $manufacturers = $request->user()->manufacturers()->withCount('products')->orderBy('name')->paginate(15);
+        $manufacturers = $request->user()->manufacturers()
+            ->withCount('products')
+            ->orderBy('name')
+            ->paginate(15)
+            ->withQueryString()
+            ->through(fn (Manufacturer $manufacturer) => [
+                'id' => $manufacturer->id,
+                'name' => $manufacturer->name,
+                'slug' => $manufacturer->slug,
+                'website' => $manufacturer->website,
+                'products_count' => $manufacturer->products_count,
+            ]);
 
-        return view('catalog.manufacturers.index', compact('manufacturers'));
+        return Inertia::render('Products/Manufacturers/Index', [
+            'manufacturers' => $manufacturers,
+            'can' => [
+                'create' => $request->user()->can('create', Manufacturer::class),
+            ],
+        ]);
     }
 
-    public function create(): View
+    public function create(): Response
     {
-        return view('catalog.manufacturers.create');
+        return Inertia::render('Products/Manufacturers/Create');
     }
 
     public function store(Request $request): RedirectResponse
@@ -35,9 +52,17 @@ class ManufacturerController extends Controller
         return redirect()->route('manufacturers.edit', $manufacturer)->with('status', 'Producent został utworzony.');
     }
 
-    public function edit(Manufacturer $manufacturer): View
+    public function edit(Manufacturer $manufacturer): Response
     {
-        return view('catalog.manufacturers.edit', compact('manufacturer'));
+        return Inertia::render('Products/Manufacturers/Edit', [
+            'manufacturer' => [
+                'id' => $manufacturer->id,
+                'name' => $manufacturer->name,
+                'slug' => $manufacturer->slug,
+                'website' => $manufacturer->website,
+                'contacts' => $manufacturer->contacts ? json_encode($manufacturer->contacts, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) : null,
+            ],
+        ]);
     }
 
     public function update(Request $request, Manufacturer $manufacturer): RedirectResponse

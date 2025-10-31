@@ -3,7 +3,8 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
-use Illuminate\View\View;
+use Inertia\Inertia;
+use Inertia\Response;
 
 class WarehouseDeliveryController extends Controller
 {
@@ -12,8 +13,8 @@ class WarehouseDeliveryController extends Controller
         $this->middleware('auth');
     }
 
-    public function index(Request $request): View
+    public function index(Request $request): Response
     {
-        return view('warehouse.deliveries.index');
+        return Inertia::render('Warehouse/Deliveries/Index');
     }
 }
