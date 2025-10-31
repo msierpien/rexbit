@@ -82,4 +82,44 @@ class User extends Authenticatable
     {
         return $this->hasMany(Integration::class);
     }
+
+    public function products(): HasMany
+    {
+        return $this->hasMany(Product::class);
+    }
+
+    public function productCatalogs(): HasMany
+    {
+        return $this->hasMany(ProductCatalog::class);
+    }
+
+    public function productCategories(): HasMany
+    {
+        return $this->hasMany(ProductCategory::class);
+    }
+
+    public function manufacturers(): HasMany
+    {
+        return $this->hasMany(Manufacturer::class);
+    }
+
+    public function warehouseLocations(): HasMany
+    {
+        return $this->hasMany(WarehouseLocation::class);
+    }
+
+    public function warehouseDocuments(): HasMany
+    {
+        return $this->hasMany(WarehouseDocument::class);
+    }
+
+    public function warehouseStockTotals(): HasMany
+    {
+        return $this->hasMany(WarehouseStockTotal::class);
+    }
+
+    public function contractors(): HasMany
+    {
+        return $this->hasMany(Contractor::class);
+    }
 }

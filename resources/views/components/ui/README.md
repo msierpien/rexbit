@@ -9,6 +9,8 @@ Zestaw komponentów Blade w katalogu `resources/views/components/ui` pomaga utrz
 | `x-ui.alert` | Komunikaty informacyjne/sukces/błąd | `<x-ui.alert variant="success">Zapisano!</x-ui.alert>` |
 | `x-ui.badge` | Etykiety statusów/rol | `<x-ui.badge variant="warning">Pending</x-ui.badge>` |
 | `x-ui.button` | Przyciski i linki stylowane jak przycisk | `<x-ui.button>Akcja</x-ui.button>` lub `<x-ui.button as="a" href="#">Link</x-ui.button>` |
+| `x-ui.sidebar.item` | Link w menu bocznym | `<x-ui.sidebar.item label="Dashboard" :href="route('dashboard')" icon="home" />` |
+| `x-ui.sidebar.group` | Grupa linków z rozwijanym menu | `<x-ui.sidebar.group label="Produkty" icon="box">…</x-ui.sidebar.group>` |
 | `x-ui.select` | Pola wyboru z etykietą i walidacją | `<x-ui.select name="role" :options="$roles" label="Rola" />` |
 | `x-ui.table` (+ `table.head`, `table.heading`, `table.row`, `table.cell`) | Tabele danych z responsywnym wrapperem | zob. `resources/views/dashboard/admin/users/index.blade.php` |
 | `x-ui.avatar` | Inicjały użytkownika w formie avatara | `<x-ui.avatar :name="$user->name" size="md" />` |

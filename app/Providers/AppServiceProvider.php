@@ -23,5 +23,15 @@ class AppServiceProvider extends ServiceProvider
             \App\Models\Integration::class,
             \App\Policies\IntegrationPolicy::class
         );
+
+        \Illuminate\Support\Facades\Gate::policies([
+            \App\Models\Product::class => \App\Policies\ProductPolicy::class,
+            \App\Models\ProductCategory::class => \App\Policies\ProductCategoryPolicy::class,
+            \App\Models\ProductCatalog::class => \App\Policies\ProductCatalogPolicy::class,
+            \App\Models\Manufacturer::class => \App\Policies\ManufacturerPolicy::class,
+            \App\Models\WarehouseDocument::class => \App\Policies\WarehouseDocumentPolicy::class,
+            \App\Models\WarehouseLocation::class => \App\Policies\WarehouseLocationPolicy::class,
+            \App\Models\Contractor::class => \App\Policies\ContractorPolicy::class,
+        ]);
     }
 }

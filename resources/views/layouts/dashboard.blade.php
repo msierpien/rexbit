@@ -21,12 +21,14 @@
 
         $navItems = [
             [
+                'type' => 'link',
                 'label' => 'Strona główna',
                 'icon' => 'home',
                 'route' => route('home'),
                 'active' => request()->routeIs('home'),
             ],
             [
+                'type' => 'link',
                 'label' => 'Panel administratora',
                 'icon' => 'shield-check',
                 'route' => route('dashboard.admin'),
@@ -34,13 +36,68 @@
                 'visible' => $roleValue === 'admin',
             ],
             [
-                'label' => 'Użytkownicy',
-                'icon' => 'users',
-                'route' => route('admin.users.index'),
-                'active' => request()->routeIs('admin.users.*'),
-                'visible' => $roleValue === 'admin',
+                'type' => 'group',
+                'label' => 'Produkty',
+                'icon' => 'box',
+                'visible' => in_array($roleValue, ['admin', 'user'], true),
+                'items' => [
+                    [
+                        'label' => 'Katalogi',
+                        'route' => route('product-catalogs.index'),
+                        'active' => request()->routeIs('product-catalogs.*'),
+                    ],
+                    [
+                        'label' => 'Lista produktów',
+                        'route' => route('products.index'),
+                        'active' => request()->routeIs('products.*'),
+                    ],
+                    [
+                        'label' => 'Producenci',
+                        'route' => route('manufacturers.index'),
+                        'active' => request()->routeIs('manufacturers.*'),
+                    ],
+                    [
+                        'label' => 'Kategorie',
+                        'route' => route('product-categories.index'),
+                        'active' => request()->routeIs('product-categories.*'),
+                    ],
+                    [
+                        'label' => 'Ustawienia',
+                        'route' => route('products.settings'),
+                        'active' => request()->routeIs('products.settings'),
+                    ],
+                ],
             ],
             [
+                'type' => 'group',
+                'label' => 'Magazyn',
+                'icon' => 'warehouse',
+                'visible' => in_array($roleValue, ['admin', 'user'], true),
+                'items' => [
+                    [
+                        'label' => 'Dokumenty magazynowe',
+                        'route' => route('warehouse.documents.index'),
+                        'active' => request()->routeIs('warehouse.documents.*'),
+                    ],
+                    [
+                        'label' => 'Dostawy',
+                        'route' => route('warehouse.deliveries.index'),
+                        'active' => request()->routeIs('warehouse.deliveries.*'),
+                    ],
+                    [
+                        'label' => 'Kontrahenci',
+                        'route' => route('warehouse.contractors.index'),
+                        'active' => request()->routeIs('warehouse.contractors.*'),
+                    ],
+                    [
+                        'label' => 'Ustawienia',
+                        'route' => route('warehouse.settings'),
+                        'active' => request()->routeIs('warehouse.settings'),
+                    ],
+                ],
+            ],
+            [
+                'type' => 'link',
                 'label' => 'Integracje',
                 'icon' => 'link',
                 'route' => route('integrations.index'),
@@ -48,6 +105,7 @@
                 'visible' => in_array($roleValue, ['admin', 'user'], true),
             ],
             [
+                'type' => 'link',
                 'label' => 'Panel użytkownika',
                 'icon' => 'user',
                 'route' => route('dashboard.user'),
@@ -74,13 +132,32 @@
             :brandSubtitle="$brandSubtitle"
         >
             @foreach ($navItems as $item)
-                <x-ui.sidebar.item
-                    :label="$item['label']"
-                    :href="$item['route']"
-                    :icon="$item['icon']"
-                    :active="$item['active']"
-                    :visible="$item['visible'] ?? true"
-                />
+                @if (($item['visible'] ?? true) === false)
+                    @continue
+                @endif
+
+                @if ($item['type'] === 'group')
+                    @php
+                        $groupActive = collect($item['items'])->contains(fn ($sub) => $sub['active']);
+                    @endphp
+                    <x-ui.sidebar.group :label="$item['label']" :icon="$item['icon']" :active="$groupActive">
+                        @foreach ($item['items'] as $subItem)
+                            <x-ui.sidebar.item
+                                :label="$subItem['label']"
+                                :href="$subItem['route']"
+                                icon="dot"
+                                :active="$subItem['active']"
+                            />
+                        @endforeach
+                    </x-ui.sidebar.group>
+                @else
+                    <x-ui.sidebar.item
+                        :label="$item['label']"
+                        :href="$item['route']"
+                        :icon="$item['icon']"
+                        :active="$item['active']"
+                    />
+                @endif
             @endforeach
 
             <x-slot:footer>
