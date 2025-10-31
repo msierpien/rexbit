@@ -11,23 +11,29 @@
                 @csrf
 
                 <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
-                    <x-ui.input label="Numer" name="number" :value="old('number')" required />
-                <x-ui.select
-                    label="Typ dokumentu"
-                    name="type"
-                    :value="old('type')"
-                    :options="['PZ' => 'PZ - Przyjęcie zewnętrzne', 'WZ' => 'WZ - Wydanie zewnętrzne', 'IN' => 'IN - Przyjęcie wewnętrzne', 'OUT' => 'OUT - Wydanie wewnętrzne']"
-                    required
-                />
-                <x-ui.select
-                    label="Magazyn"
-                    name="warehouse_location_id"
-                    :value="old('warehouse_location_id')"
-                    :options="$warehouses->pluck('name', 'id')->toArray()"
-                    placeholder="Wybierz magazyn"
-                />
-                <x-ui.input label="Data" name="issued_at" type="date" :value="old('issued_at', today()->format('Y-m-d'))" required />
-            </div>
+                    <x-ui.input
+                        label="Numer"
+                        name="number"
+                        :value="old('number')"
+                        placeholder="Generowany automatycznie"
+                        help-text="Pozostaw puste, aby numer został nadany automatycznie."
+                    />
+                    <x-ui.select
+                        label="Typ dokumentu"
+                        name="type"
+                        :value="old('type', 'PZ')"
+                        :options="['PZ' => 'PZ - Przyjęcie zewnętrzne', 'WZ' => 'WZ - Wydanie zewnętrzne', 'IN' => 'IN - Przyjęcie wewnętrzne', 'OUT' => 'OUT - Wydanie wewnętrzne']"
+                        required
+                    />
+                    <x-ui.select
+                        label="Magazyn"
+                        name="warehouse_location_id"
+                        :value="old('warehouse_location_id')"
+                        :options="$warehouses->pluck('name', 'id')->toArray()"
+                        placeholder="Wybierz magazyn"
+                    />
+                    <x-ui.input label="Data" name="issued_at" type="date" :value="old('issued_at', today()->format('Y-m-d'))" required />
+                </div>
 
                 <x-ui.select
                     label="Kontrahent"
@@ -36,6 +42,8 @@
                     :options="$contractors->pluck('name', 'id')->toArray()"
                     placeholder="Wybierz kontrahenta"
                 />
+
+                <p class="text-xs text-gray-500 dark:text-gray-400">Numer dokumentu zostanie nadany automatycznie na podstawie konfiguracji, jeśli pozostawisz go pustym.</p>
 
                 <div class="space-y-4">
                     <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100">Pozycje dokumentu</h3>

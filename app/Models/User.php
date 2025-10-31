@@ -122,4 +122,9 @@ class User extends Authenticatable
     {
         return $this->hasMany(Contractor::class);
     }
+
+    public function warehouseDocumentSettings(): HasMany
+    {
+        return $this->hasMany(WarehouseDocumentSetting::class);
+    }
 }

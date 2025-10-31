@@ -60,7 +60,9 @@ Route::middleware(['auth', 'role:user,admin'])->group(function (): void {
         ->names('warehouse.documents')
         ->except(['show']);
     Route::get('/warehouse/deliveries', [WarehouseDeliveryController::class, 'index'])->name('warehouse.deliveries.index');
-    Route::get('/warehouse/settings', WarehouseSettingsController::class)->name('warehouse.settings');
+    Route::get('/warehouse/settings', [WarehouseSettingsController::class, 'index'])->name('warehouse.settings');
+    Route::post('/warehouse/settings', [WarehouseSettingsController::class, 'update'])->name('warehouse.settings.update');
+    Route::post('/warehouse/settings/locations', [WarehouseSettingsController::class, 'storeLocation'])->name('warehouse.settings.locations.store');
     Route::resource('/warehouse/contractors', ContractorController::class)
         ->names('warehouse.contractors')
         ->except(['show']);

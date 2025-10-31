@@ -2,6 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\WarehouseDocumentSetting;
+use App\Models\WarehouseLocation;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
@@ -12,10 +15,96 @@ class WarehouseSettingsController extends Controller
         $this->middleware('auth');
     }
 
-    public function __invoke(Request $request): View
-    {
-        $warehouses = $request->user()->warehouseLocations()->orderBy('name')->get();
+    private array $documentTypes = ['PZ', 'WZ', 'IN', 'OUT'];
 
-        return view('warehouse.settings.index', compact('warehouses'));
+    public function index(Request $request): View
+    {
+        $user = $request->user();
+        $warehouses = $user->warehouseLocations()->orderBy('name')->get();
+        $documentTypes = $this->documentTypes;
+        $settings = $user->warehouseDocumentSettings()->get()->keyBy('type');
+
+        return view('warehouse.settings.index', compact('warehouses', 'documentTypes', 'settings'));
+    }
+
+    public function update(Request $request): RedirectResponse
+    {
+        $user = $request->user();
+
+        $data = $request->validate([
+            'document_settings' => ['required', 'array'],
+            'document_settings.*.prefix' => ['nullable', 'string', 'max:20'],
+            'document_settings.*.suffix' => ['nullable', 'string', 'max:20'],
+            'document_settings.*.next_number' => ['required', 'integer', 'min:1'],
+            'document_settings.*.padding' => ['required', 'integer', 'min:1', 'max:8'],
+            'document_settings.*.reset_period' => ['required', 'in:none,daily,monthly,yearly'],
+        ]);
+
+        foreach ($data['document_settings'] as $type => $settings) {
+            if (! in_array($type, $this->documentTypes, true)) {
+                continue;
+            }
+
+            $setting = WarehouseDocumentSetting::query()
+                ->firstOrCreate([
+                    'user_id' => $user->id,
+                    'type' => $type,
+                ], [
+                    'prefix' => $type.'/',
+                    'suffix' => null,
+                    'next_number' => 1,
+                    'padding' => 4,
+                    'reset_period' => 'none',
+                    'last_reset_at' => now(),
+                ]);
+
+            $setting->fill([
+                'prefix' => $settings['prefix'] ?? null,
+                'suffix' => $settings['suffix'] ?? null,
+                'next_number' => $settings['next_number'],
+                'padding' => $settings['padding'],
+                'reset_period' => $settings['reset_period'],
+            ]);
+
+            if ($setting->isDirty('reset_period')) {
+                $setting->last_reset_at = null;
+            }
+
+            if ($setting->reset_period === 'none') {
+                $setting->last_reset_at = $setting->last_reset_at ?? now();
+            }
+
+            $setting->save();
+        }
+
+        return redirect()->route('warehouse.settings')->with('status', 'Ustawienia dokumentów magazynowych zostały zapisane.');
+    }
+
+    public function storeLocation(Request $request): RedirectResponse
+    {
+        $user = $request->user();
+        $this->authorize('create', WarehouseLocation::class);
+
+        $validated = $this->validateWithBag('location', $request, [
+            'location_name' => ['required', 'string', 'max:120'],
+            'location_code' => ['nullable', 'string', 'max:30'],
+            'location_is_default' => ['nullable', 'boolean'],
+        ]);
+
+        $location = $user->warehouseLocations()->create([
+            'name' => $validated['location_name'],
+            'code' => $validated['location_code'] ?? null,
+            'is_default' => (bool) ($validated['location_is_default'] ?? false),
+        ]);
+
+        if ($location->is_default) {
+            $user->warehouseLocations()
+                ->where('id', '!=', $location->id)
+                ->update(['is_default' => false]);
+        }
+
+        return redirect()
+            ->route('warehouse.settings')
+            ->with('status', 'Magazyn został dodany.');
     }
 }

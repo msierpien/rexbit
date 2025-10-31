@@ -16,7 +16,8 @@
                 @method('PUT')
 
                 <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
-                    <x-ui.input label="Numer" name="number" :value="old('number', $document->number)" required />
+                    <x-ui.input label="Numer" name="number" :value="old('number', $document->number)" />
+
                     <x-ui.select
                         label="Typ dokumentu"
                         name="type"
@@ -24,15 +25,17 @@
                         :options="['PZ' => 'PZ', 'WZ' => 'WZ', 'IN' => 'IN', 'OUT' => 'OUT']"
                         required
                     />
-                <x-ui.select
-                    label="Magazyn"
-                    name="warehouse_location_id"
-                    :value="old('warehouse_location_id', $document->warehouse_location_id)"
-                    :options="$warehouses->pluck('name', 'id')->toArray()"
-                    placeholder="Wybierz magazyn"
-                />
-                <x-ui.input label="Data" name="issued_at" type="date" :value="old('issued_at', $document->issued_at->format('Y-m-d'))" required />
-            </div>
+
+                    <x-ui.select
+                        label="Magazyn"
+                        name="warehouse_location_id"
+                        :value="old('warehouse_location_id', $document->warehouse_location_id)"
+                        :options="$warehouses->pluck('name', 'id')->toArray()"
+                        placeholder="Wybierz magazyn"
+                    />
+
+                    <x-ui.input label="Data" name="issued_at" type="date" :value="old('issued_at', $document->issued_at->format('Y-m-d'))" required />
+                </div>
 
                 <x-ui.select
                     label="Kontrahent"
@@ -41,6 +44,7 @@
                     :options="$contractors->pluck('name', 'id')->toArray()"
                     placeholder="Wybierz kontrahenta"
                 />
+                <p class="text-xs text-gray-500 dark:text-gray-400">Pozostaw numer pusty, aby wygenerować go automatycznie zgodnie z konfiguracją.</p>
 
                 <div class="flex items-center gap-3">
                     <x-ui.button type="submit">Zapisz zmiany</x-ui.button>

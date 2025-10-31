@@ -29,6 +29,7 @@ return new class extends Migration
 
         if (Schema::hasTable('products')) {
             Schema::table('products', function (Blueprint $table): void {
+                DB::statement('ALTER TABLE products DROP CONSTRAINT IF EXISTS products_user_id_slug_unique');
                 if (! Schema::hasColumn('products', 'catalog_id')) {
                     $table->foreignId('catalog_id')->nullable()->after('user_id');
                 }
@@ -90,6 +91,12 @@ return new class extends Migration
                 if (Schema::hasColumn('products', 'manufacturer_id')) {
                     $table->foreign('manufacturer_id')->references('id')->on('manufacturers')->nullOnDelete();
                 }
+                if (Schema::hasColumn('products', 'slug')) {
+                    $table->unique(['user_id', 'catalog_id', 'slug'], 'products_user_catalog_slug_unique');
+                }
+                if (Schema::hasColumn('products', 'sku')) {
+                    $table->index(['user_id', 'catalog_id', 'sku'], 'products_user_catalog_sku_index');
+                }
             });
         }
 
@@ -97,6 +104,9 @@ return new class extends Migration
             Schema::table('product_categories', function (Blueprint $table): void {
                 if (Schema::hasColumn('product_categories', 'catalog_id')) {
                     $table->foreign('catalog_id')->references('id')->on('product_catalogs')->cascadeOnDelete();
+                }
+                if (Schema::hasColumn('product_categories', 'slug')) {
+                    $table->unique(['user_id', 'catalog_id', 'slug'], 'product_categories_user_catalog_slug_unique');
                 }
             });
         }
@@ -125,6 +135,8 @@ return new class extends Migration
                     $table->dropForeign(['manufacturer_id']);
                     $table->dropColumn('manufacturer_id');
                 }
+                DB::statement('ALTER TABLE products DROP CONSTRAINT IF EXISTS products_user_catalog_slug_unique');
+                DB::statement('DROP INDEX IF EXISTS products_user_catalog_sku_index');
                 foreach (['purchase_price_net', 'purchase_vat_rate', 'sale_price_net', 'sale_vat_rate'] as $column) {
                     if (Schema::hasColumn('products', $column)) {
                         $table->dropColumn($column);
@@ -139,7 +151,7 @@ return new class extends Migration
                     $table->dropForeign(['catalog_id']);
                     $table->dropColumn('catalog_id');
                 }
-                $table->dropUnique('product_categories_user_catalog_slug_unique');
+                DB::statement('ALTER TABLE product_categories DROP CONSTRAINT IF EXISTS product_categories_user_catalog_slug_unique');
                 $table->unique(['user_id', 'slug']);
             });
         }
