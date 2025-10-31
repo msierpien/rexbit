@@ -46,15 +46,19 @@
                 />
                 <p class="text-xs text-gray-500 dark:text-gray-400">Pozostaw numer pusty, aby wygenerować go automatycznie zgodnie z konfiguracją.</p>
 
+                <div class="space-y-4">
+                    <div>
+                        <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100">Pozycje dokumentu</h3>
+                        <p class="text-sm text-gray-500 dark:text-gray-400">Zarządzaj produktami powiązanymi z tym dokumentem.</p>
+                    </div>
+                    <x-warehouse.document-items :products="$products" :items="$document->items" />
+                </div>
+
                 <div class="flex items-center gap-3">
                     <x-ui.button type="submit">Zapisz zmiany</x-ui.button>
                     <x-ui.button as="a" :href="route('warehouse.documents.index')" variant="ghost">Wróć</x-ui.button>
                 </div>
             </form>
-        </x-ui.card>
-
-        <x-ui.card title="Pozycje dokumentu" subtitle="Dodawaj produkty oraz ilości wchodzące w skład dokumentu">
-            <p class="text-sm text-gray-500 dark:text-gray-400">Moduł edycji pozycji dokumentu będzie rozbudowany w kolejnym etapie. Na ten moment możesz dodać pozycje poprzez API lub bezpośrednio w bazie danych.</p>
         </x-ui.card>
     </div>
 @endsection

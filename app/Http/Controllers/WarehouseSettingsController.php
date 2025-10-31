@@ -6,6 +6,7 @@ use App\Models\WarehouseDocumentSetting;
 use App\Models\WarehouseLocation;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class WarehouseSettingsController extends Controller
@@ -20,11 +21,12 @@ class WarehouseSettingsController extends Controller
     public function index(Request $request): View
     {
         $user = $request->user();
-        $warehouses = $user->warehouseLocations()->orderBy('name')->get();
+        $warehouses = $user->warehouseLocations()->with('catalogs')->orderBy('name')->get();
         $documentTypes = $this->documentTypes;
         $settings = $user->warehouseDocumentSettings()->get()->keyBy('type');
+        $availableCatalogs = $user->productCatalogs()->orderBy('name')->get();
 
-        return view('warehouse.settings.index', compact('warehouses', 'documentTypes', 'settings'));
+        return view('warehouse.settings.index', compact('warehouses', 'documentTypes', 'settings', 'availableCatalogs'));
     }
 
     public function update(Request $request): RedirectResponse
@@ -89,18 +91,44 @@ class WarehouseSettingsController extends Controller
             'location_name' => ['required', 'string', 'max:120'],
             'location_code' => ['nullable', 'string', 'max:30'],
             'location_is_default' => ['nullable', 'boolean'],
+            'location_strict_control' => ['nullable', 'boolean'],
+            'location_catalogs' => ['nullable', 'array'],
+            'location_catalogs.*' => ['integer', 'exists:product_catalogs,id'],
         ]);
+
+        $catalogIds = collect($validated['location_catalogs'] ?? [])
+            ->filter(fn ($value) => $value !== null && $value !== '')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
+        if ($catalogIds->isNotEmpty()) {
+            $ownedCatalogIds = $user->productCatalogs()
+                ->whereIn('id', $catalogIds)
+                ->pluck('id');
+
+            if ($catalogIds->diff($ownedCatalogIds)->isNotEmpty()) {
+                throw ValidationException::withMessages([
+                    'location_catalogs' => 'Wybrano katalog, do którego nie masz dostępu.',
+                ])->errorBag('location');
+            }
+        }
 
         $location = $user->warehouseLocations()->create([
             'name' => $validated['location_name'],
             'code' => $validated['location_code'] ?? null,
             'is_default' => (bool) ($validated['location_is_default'] ?? false),
+            'strict_control' => (bool) ($validated['location_strict_control'] ?? false),
         ]);
 
         if ($location->is_default) {
             $user->warehouseLocations()
                 ->where('id', '!=', $location->id)
                 ->update(['is_default' => false]);
+        }
+
+        if ($catalogIds->isNotEmpty()) {
+            $location->catalogs()->sync($catalogIds);
         }
 
         return redirect()

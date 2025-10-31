@@ -46,8 +46,11 @@
                 <p class="text-xs text-gray-500 dark:text-gray-400">Numer dokumentu zostanie nadany automatycznie na podstawie konfiguracji, jeśli pozostawisz go pustym.</p>
 
                 <div class="space-y-4">
-                    <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100">Pozycje dokumentu</h3>
-                    <p class="text-sm text-gray-500 dark:text-gray-400">Po zapisaniu będziesz mógł dodać pozycje w widoku edycji dokumentu.</p>
+                    <div>
+                        <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100">Pozycje dokumentu</h3>
+                        <p class="text-sm text-gray-500 dark:text-gray-400">Dodaj produkty wraz z ilością i opcjonalnymi parametrami cenowymi.</p>
+                    </div>
+                    <x-warehouse.document-items :products="$products" />
                 </div>
 
                 <div class="flex items-center gap-3">

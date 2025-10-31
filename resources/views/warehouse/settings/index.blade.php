@@ -43,12 +43,29 @@
 
         <div class="space-y-3">
             @forelse ($warehouses as $warehouse)
-                <div class="flex items-center justify-between rounded-lg border border-gray-200 px-4 py-3 dark:border-gray-700">
-                    <div>
-                        <p class="font-medium text-gray-900 dark:text-gray-100">{{ $warehouse->name }}</p>
-                        <p class="text-xs text-gray-500 dark:text-gray-400">Kod: {{ $warehouse->code ?? 'brak' }} | Domyślny: {{ $warehouse->is_default ? 'tak' : 'nie' }}</p>
+                <div class="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                            <p class="font-medium text-gray-900 dark:text-gray-100">{{ $warehouse->name }}</p>
+                            <p class="text-xs text-gray-500 dark:text-gray-400">
+                                Kod: {{ $warehouse->code ?? 'brak' }} |
+                                Domyślny: {{ $warehouse->is_default ? 'tak' : 'nie' }} |
+                                Ścisła kontrola: {{ $warehouse->strict_control ? 'tak' : 'nie' }}
+                            </p>
+                        </div>
+
+                        <x-ui.button variant="outline" size="sm">Edytuj</x-ui.button>
                     </div>
-                    <x-ui.button variant="outline" size="sm">Edytuj</x-ui.button>
+
+                    <div class="mt-3 flex flex-wrap gap-2">
+                        @forelse ($warehouse->catalogs as $catalog)
+                            <span class="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-200">
+                                {{ $catalog->name }}
+                            </span>
+                        @empty
+                            <span class="text-xs text-gray-500 dark:text-gray-400">Brak przypisanych katalogów (dostęp do wszystkich).</span>
+                        @endforelse
+                    </div>
                 </div>
             @empty
                 <p class="text-sm text-gray-500 dark:text-gray-400">Brak zdefiniowanych magazynów. Dodaj pierwszy magazyn, aby rozpocząć pracę.</p>
@@ -162,6 +179,52 @@
                 </label>
                 <p class="text-xs text-gray-500 dark:text-gray-400">Zastąpi aktualnie domyślny magazyn dla tego konta.</p>
             </div>
+
+            <div class="space-y-2">
+                <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                    <input
+                        type="checkbox"
+                        name="location_strict_control"
+                        value="1"
+                        class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700"
+                        @checked(old('location_strict_control'))
+                    >
+                    <span>Włącz ścisłą kontrolę stanów magazynowych</span>
+                </label>
+                <p class="text-xs text-gray-500 dark:text-gray-400">W trybie ścisłej kontroli każda zmiana stanu towaru wymaga dokumentu magazynowego.</p>
+            </div>
+
+            <div class="space-y-2">
+                <label for="location_catalogs" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Katalogi produktów
+                </label>
+                <select
+                    id="location_catalogs"
+                    name="location_catalogs[]"
+                    multiple
+                    size="5"
+                    class="block w-full rounded-lg border border-gray-300 bg-white text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                >
+                    @php
+                        $selectedCatalogs = collect(old('location_catalogs', []))->map(fn ($id) => (int) $id)->all();
+                    @endphp
+                    @foreach ($availableCatalogs as $catalog)
+                        <option value="{{ $catalog->id }}" @selected(in_array($catalog->id, $selectedCatalogs, true))>
+                            {{ $catalog->name }}
+                        </option>
+                    @endforeach
+                </select>
+                @if ($errors->location->has('location_catalogs'))
+                    <p class="text-sm text-red-500 dark:text-red-400">{{ $errors->location->first('location_catalogs') }}</p>
+                @endif
+                <p class="text-xs text-gray-500 dark:text-gray-400">Pozostaw puste, aby magazyn miał dostęp do wszystkich katalogów.</p>
+            </div>
+
+            @if ($availableCatalogs->isEmpty())
+                <x-ui.alert variant="warning">
+                    Nie masz jeszcze żadnych katalogów produktów. Możesz dodawać magazyny bez ograniczeń, a katalogi przypisać później.
+                </x-ui.alert>
+            @endif
         </form>
 
         <x-slot:footer>
