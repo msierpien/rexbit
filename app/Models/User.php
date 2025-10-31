@@ -21,6 +21,8 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'role',
+        'status',
     ];
 
     /**
@@ -43,6 +45,32 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'role' => \App\Enums\Role::class,
+            'status' => \App\Enums\UserStatus::class,
         ];
+    }
+
+    /**
+     * Determine if the user has the given role.
+     */
+    public function hasRole(\App\Enums\Role|string $role): bool
+    {
+        if ($role instanceof \App\Enums\Role) {
+            return $this->role === $role;
+        }
+
+        return $this->role->value === $role;
+    }
+
+    /**
+     * Determine if the user has the given status.
+     */
+    public function hasStatus(\App\Enums\UserStatus|string $status): bool
+    {
+        if ($status instanceof \App\Enums\UserStatus) {
+            return $this->status === $status;
+        }
+
+        return $this->status->value === $status;
     }
 }

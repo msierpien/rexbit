@@ -2,7 +2,10 @@
 
 namespace Database\Seeders;
 
+use App\Enums\Role;
+use App\Enums\UserStatus;
 use App\Models\User;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
@@ -15,11 +18,46 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // User::factory(10)->create();
+        User::factory()
+            ->create([
+                'name' => 'Administrator',
+                'email' => 'admin@example.com',
+                'password' => Hash::make('password'),
+                'role' => Role::ADMIN,
+                'status' => UserStatus::ACTIVE,
+            ]);
 
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-        ]);
+        User::factory()
+            ->create([
+                'name' => 'Test User',
+                'email' => 'test@example.com',
+                'password' => Hash::make('password'),
+                'role' => Role::USER,
+                'status' => UserStatus::ACTIVE,
+            ]);
+
+        User::factory()
+            ->create([
+                'name' => 'Moderator',
+                'email' => 'moderator@example.com',
+                'password' => Hash::make('password'),
+                'role' => Role::MODERATOR,
+                'status' => UserStatus::ACTIVE,
+            ]);
+
+        User::factory(4)
+            ->state([
+                'status' => UserStatus::ACTIVE,
+            ])->create();
+
+        User::factory(2)
+            ->state([
+                'status' => UserStatus::INACTIVE,
+            ])->create();
+
+        User::factory(2)
+            ->state([
+                'status' => UserStatus::SUSPENDED,
+            ])->create();
     }
 }

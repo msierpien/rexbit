@@ -11,15 +11,34 @@
 
             <!-- Desktop Navigation -->
             <div class="hidden md:flex items-center space-x-8">
-                <a href="/" class="text-gray-600 hover:text-gray-900 px-3 py-2 text-sm font-medium transition duration-150">Home</a>
-                <a href="/about" class="text-gray-600 hover:text-gray-900 px-3 py-2 text-sm font-medium transition duration-150">About</a>
-                <a href="/services" class="text-gray-600 hover:text-gray-900 px-3 py-2 text-sm font-medium transition duration-150">Services</a>
-                <a href="/contact" class="text-gray-600 hover:text-gray-900 px-3 py-2 text-sm font-medium transition duration-150">Contact</a>
-                
-                <!-- CTA Button -->
-                <a href="/login" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition duration-150">
-                    Login
-                </a>
+          
+                @auth
+                    <a href="{{ auth()->user()->role?->value === 'admin' ? route('dashboard.admin') : route('dashboard.user') }}"
+                       class="text-gray-600 hover:text-gray-900 px-3 py-2 text-sm font-medium transition duration-150">
+                        Dashboard
+                    </a>
+
+                    @if(auth()->user()->role?->value === 'admin')
+                        <a href="{{ route('admin.users.index') }}"
+                           class="text-gray-600 hover:text-gray-900 px-3 py-2 text-sm font-medium transition duration-150">
+                            Użytkownicy
+                        </a>
+                    @endif
+
+                    <form method="POST" action="{{ route('logout') }}" class="inline">
+                        @csrf
+                        <button type="submit" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-md text-sm font-medium transition duration-150">
+                            Wyloguj
+                        </button>
+                    </form>
+                @else
+                    <a href="{{ route('register') }}" class="text-gray-600 hover:text-gray-900 px-3 py-2 text-sm font-medium transition duration-150">
+                        Zarejestruj się
+                    </a>
+                    <a href="{{ route('login') }}" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition duration-150">
+                        Zaloguj się
+                    </a>
+                @endauth
             </div>
 
             <!-- Mobile menu button -->
@@ -42,13 +61,36 @@
     <!-- Mobile menu (hidden by default) -->
     <div class="mobile-menu hidden md:hidden">
         <div class="px-2 pt-2 pb-3 space-y-1 sm:px-3 bg-gray-50">
-            <a href="/" class="text-gray-600 hover:text-gray-900 block px-3 py-2 text-base font-medium">Home</a>
+            <a href="{{ route('home') }}" class="text-gray-600 hover:text-gray-900 block px-3 py-2 text-base font-medium">Home</a>
             <a href="/about" class="text-gray-600 hover:text-gray-900 block px-3 py-2 text-base font-medium">About</a>
             <a href="/services" class="text-gray-600 hover:text-gray-900 block px-3 py-2 text-base font-medium">Services</a>
             <a href="/contact" class="text-gray-600 hover:text-gray-900 block px-3 py-2 text-base font-medium">Contact</a>
-            <a href="/login" class="bg-blue-600 hover:bg-blue-700 text-white block px-3 py-2 rounded-md text-base font-medium mt-4">
-                Login
-            </a>
+
+            @auth
+                <a href="{{ auth()->user()->role?->value === 'admin' ? route('dashboard.admin') : route('dashboard.user') }}"
+                   class="text-gray-600 hover:text-gray-900 block px-3 py-2 text-base font-medium">
+                   Dashboard
+                </a>
+                @if(auth()->user()->role?->value === 'admin')
+                    <a href="{{ route('admin.users.index') }}"
+                       class="text-gray-600 hover:text-gray-900 block px-3 py-2 text-base font-medium">
+                        Użytkownicy
+                    </a>
+                @endif
+                <form method="POST" action="{{ route('logout') }}" class="mt-4">
+                    @csrf
+                    <button type="submit" class="w-full bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded-md text-base font-medium">
+                        Wyloguj
+                    </button>
+                </form>
+            @else
+                <a href="{{ route('register') }}" class="text-gray-600 hover:text-gray-900 block px-3 py-2 text-base font-medium">
+                    Zarejestruj się
+                </a>
+                <a href="{{ route('login') }}" class="bg-blue-600 hover:bg-blue-700 text-white block px-3 py-2 rounded-md text-base font-medium mt-4">
+                    Zaloguj się
+                </a>
+            @endauth
         </div>
     </div>
 </nav>
