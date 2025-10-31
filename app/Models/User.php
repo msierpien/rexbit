@@ -6,6 +6,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class User extends Authenticatable
 {
@@ -72,5 +73,13 @@ class User extends Authenticatable
         }
 
         return $this->status->value === $status;
+    }
+
+    /**
+     * User integrations relationship.
+     */
+    public function integrations(): HasMany
+    {
+        return $this->hasMany(Integration::class);
     }
 }
