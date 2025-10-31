@@ -5,7 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\Contractor;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\View\View;
+use Inertia\Inertia;
+use Inertia\Response;
 
 class ContractorController extends Controller
 {
@@ -15,16 +16,31 @@ class ContractorController extends Controller
         $this->authorizeResource(Contractor::class, 'contractor');
     }
 
-    public function index(Request $request): View
+    public function index(Request $request): Response
     {
-        $contractors = $request->user()->contractors()->orderBy('name')->paginate(15);
+        $contractors = $request->user()->contractors()
+            ->orderBy('name')
+            ->paginate(15)
+            ->withQueryString()
+            ->through(fn (Contractor $contractor) => [
+                'id' => $contractor->id,
+                'name' => $contractor->name,
+                'tax_id' => $contractor->tax_id,
+                'email' => $contractor->email,
+                'phone' => $contractor->phone,
+                'city' => $contractor->city,
+                'is_supplier' => $contractor->is_supplier,
+                'is_customer' => $contractor->is_customer,
+            ]);
 
-        return view('warehouse.contractors.index', compact('contractors'));
+        return Inertia::render('Warehouse/Contractors/Index', [
+            'contractors' => $contractors,
+        ]);
     }
 
-    public function create(): View
+    public function create(): Response
     {
-        return view('warehouse.contractors.create');
+        return Inertia::render('Warehouse/Contractors/Create');
     }
 
     public function store(Request $request): RedirectResponse
@@ -34,9 +50,23 @@ class ContractorController extends Controller
         return redirect()->route('warehouse.contractors.edit', $contractor)->with('status', 'Kontrahent został utworzony.');
     }
 
-    public function edit(Contractor $contractor): View
+    public function edit(Contractor $contractor): Response
     {
-        return view('warehouse.contractors.edit', compact('contractor'));
+        return Inertia::render('Warehouse/Contractors/Edit', [
+            'contractor' => [
+                'id' => $contractor->id,
+                'name' => $contractor->name,
+                'tax_id' => $contractor->tax_id,
+                'email' => $contractor->email,
+                'phone' => $contractor->phone,
+                'city' => $contractor->city,
+                'street' => $contractor->street,
+                'postal_code' => $contractor->postal_code,
+                'is_supplier' => $contractor->is_supplier,
+                'is_customer' => $contractor->is_customer,
+                'meta' => $contractor->meta ? json_encode($contractor->meta, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) : null,
+            ],
+        ]);
     }
 
     public function update(Request $request, Contractor $contractor): RedirectResponse

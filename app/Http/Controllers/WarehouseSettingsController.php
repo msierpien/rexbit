@@ -7,7 +7,8 @@ use App\Models\WarehouseLocation;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
-use Illuminate\View\View;
+use Inertia\Inertia;
+use Inertia\Response;
 
 class WarehouseSettingsController extends Controller
 {
@@ -18,15 +19,52 @@ class WarehouseSettingsController extends Controller
 
     private array $documentTypes = ['PZ', 'WZ', 'IN', 'OUT'];
 
-    public function index(Request $request): View
+    public function index(Request $request): Response
     {
         $user = $request->user();
-        $warehouses = $user->warehouseLocations()->with('catalogs')->orderBy('name')->get();
-        $documentTypes = $this->documentTypes;
-        $settings = $user->warehouseDocumentSettings()->get()->keyBy('type');
-        $availableCatalogs = $user->productCatalogs()->orderBy('name')->get();
+        $warehouses = $user->warehouseLocations()
+            ->with('catalogs')
+            ->orderBy('name')
+            ->get()
+            ->map(fn (WarehouseLocation $location) => [
+                'id' => $location->id,
+                'name' => $location->name,
+                'code' => $location->code,
+                'is_default' => $location->is_default,
+                'strict_control' => $location->strict_control,
+                'catalogs' => $location->catalogs->map(fn ($catalog) => [
+                    'id' => $catalog->id,
+                    'name' => $catalog->name,
+                ]),
+            ]);
 
-        return view('warehouse.settings.index', compact('warehouses', 'documentTypes', 'settings', 'availableCatalogs'));
+        $settings = $user->warehouseDocumentSettings()->get()->keyBy('type');
+
+        $documentSettings = collect($this->documentTypes)->mapWithKeys(function (string $type) use ($settings) {
+            $setting = $settings->get($type);
+
+            return [
+                $type => [
+                    'prefix' => $setting?->prefix,
+                    'suffix' => $setting?->suffix,
+                    'next_number' => $setting?->next_number ?? 1,
+                    'padding' => $setting?->padding ?? 4,
+                    'reset_period' => $setting?->reset_period ?? 'none',
+                ],
+            ];
+        });
+
+        $availableCatalogs = $user->productCatalogs()
+            ->orderBy('name')
+            ->get()
+            ->map(fn ($catalog) => $catalog->only(['id', 'name']));
+
+        return Inertia::render('Warehouse/Settings', [
+            'warehouses' => $warehouses,
+            'document_types' => $this->documentTypes,
+            'document_settings' => $documentSettings,
+            'catalogs' => $availableCatalogs,
+        ]);
     }
 
     public function update(Request $request): RedirectResponse

@@ -5,6 +5,8 @@ import { Input } from '@/components/ui/input.jsx';
 import { Label } from '@/components/ui/label.jsx';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.jsx';
 
+const NONE_OPTION = '__none__';
+
 export default function ProductCategoryCreate() {
     const { catalogs, categories, errors } = usePage().props;
     const { data, setData, post, processing } = useForm({
@@ -63,7 +65,7 @@ export default function ProductCategoryCreate() {
                         <div className="space-y-2">
                             <Label>Katalog</Label>
                             <Select
-                                value={String(data.catalog_id ?? '')}
+                                value={data.catalog_id ? String(data.catalog_id) : undefined}
                                 onValueChange={(value) => setData('catalog_id', value)}
                             >
                                 <SelectTrigger>
@@ -83,14 +85,14 @@ export default function ProductCategoryCreate() {
                         <div className="space-y-2">
                             <Label>Kategoria nadrzędna</Label>
                             <Select
-                                value={String(data.parent_id ?? '')}
-                                onValueChange={(value) => setData('parent_id', value || '')}
+                                value={data.parent_id ? String(data.parent_id) : NONE_OPTION}
+                                onValueChange={(value) => setData('parent_id', value === NONE_OPTION ? '' : value)}
                             >
                                 <SelectTrigger>
                                     <SelectValue placeholder="Brak" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="">Brak</SelectItem>
+                                    <SelectItem value={NONE_OPTION}>Brak</SelectItem>
                                     {filteredCategories.map((category) => (
                                         <SelectItem key={category.id} value={String(category.id)}>
                                             {category.name}
@@ -130,5 +132,3 @@ export default function ProductCategoryCreate() {
 ProductCategoryCreate.layout = (page) => (
     <DashboardLayout title="Nowa kategoria">{page}</DashboardLayout>
 );
-
-export default ProductCategoryCreate;

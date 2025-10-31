@@ -2,14 +2,19 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Enums\IntegrationStatus;
 use App\Enums\IntegrationType;
 use App\Http\Controllers\Controller;
 use App\Integrations\IntegrationService;
 use App\Models\Integration;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
-use Illuminate\View\View;
+use Inertia\Inertia;
+use Inertia\Response;
 
 class IntegrationController extends Controller
 {
@@ -23,25 +28,55 @@ class IntegrationController extends Controller
     /**
      * Display a listing of the integrations.
      */
-    public function index(Request $request): View
+    public function index(Request $request): Response
     {
         $type = $request->string('type')->toString() ?: null;
-        $types = IntegrationType::cases();
+        $types = collect(IntegrationType::cases());
+        $activeType = $type ? IntegrationType::tryFrom($type) : null;
 
         $integrations = $this->service
-            ->list($request->user(), $type);
+            ->list($request->user(), $activeType);
 
-        return view('dashboard.admin.integrations.index', compact('integrations', 'types', 'type'));
+        $presented = $integrations->map(fn (Integration $integration) => $this->presentIntegration($integration));
+
+        $stats = $this->integrationStats($request->user()->integrations()->get());
+
+        return Inertia::render('Integrations/Index', [
+            'integrations' => $presented,
+            'filters' => [
+                'type' => $activeType?->value,
+            ],
+            'types' => $types->map(fn (IntegrationType $integrationType) => $this->typeMetadata($integrationType)),
+            'stats' => $stats,
+            'can' => [
+                'create' => $request->user()->can('create', Integration::class),
+            ],
+        ]);
     }
 
     /**
      * Show the form for creating a new integration.
      */
-    public function create(): View
+    public function create(Request $request): Response
     {
-        $types = IntegrationType::cases();
+        $types = collect(IntegrationType::cases());
+        $defaultType = $request->string('type')->toString();
+        $selectedType = IntegrationType::tryFrom($defaultType) ?? $types->first();
 
-        return view('dashboard.admin.integrations.create', compact('types'));
+        return Inertia::render('Integrations/Create', [
+            'types' => $types
+                ->map(fn (IntegrationType $type) => array_merge(
+                    $this->typeMetadata($type),
+                    ['fields' => $this->driverFields($type, isEdit: false)]
+                )),
+            'defaults' => [
+                'type' => $selectedType?->value,
+                'config' => $types
+                    ->mapWithKeys(fn (IntegrationType $type) => [
+                        $type->value => $this->driverDefaultConfig($type),
+                    ]),
+            ],
+        ]);
     }
 
     /**
@@ -75,7 +110,7 @@ class IntegrationController extends Controller
     /**
      * Show the form for editing the specified integration.
      */
-    public function edit(Integration $integration): View
+    public function edit(Request $request, Integration $integration): Response
     {
         $integration->load([
             'user.productCatalogs' => fn ($query) => $query->orderBy('name'),
@@ -83,8 +118,81 @@ class IntegrationController extends Controller
             'importProfiles.runs' => fn ($query) => $query->latest()->take(5),
         ]);
 
-        return view('dashboard.admin.integrations.edit', [
-            'integration' => $integration,
+        $catalogs = $integration->user
+            ? $integration->user->productCatalogs->sortBy('name')->map(
+                fn ($catalog) => $catalog->only(['id', 'name'])
+            )->values()
+            : collect();
+
+        $profiles = $integration->type === IntegrationType::CSV_XML_IMPORT
+            ? $integration->importProfiles->map(fn ($profile) => [
+                'id' => $profile->id,
+                'name' => $profile->name,
+                'format' => $profile->format,
+                'source_type' => $profile->source_type,
+                'source_location' => $profile->source_location,
+                'catalog_id' => $profile->catalog_id,
+                'delimiter' => $profile->delimiter,
+                'has_header' => (bool) $profile->has_header,
+                'is_active' => (bool) $profile->is_active,
+                'fetch_mode' => $profile->fetch_mode,
+                'fetch_interval_minutes' => $profile->fetch_interval_minutes,
+                'fetch_daily_at' => optional($profile->fetch_daily_at)->format('H:i'),
+                'fetch_cron_expression' => $profile->fetch_cron_expression,
+                'options' => $profile->options ?? [],
+                'last_headers' => $profile->last_headers ?? [],
+                'next_run_at' => optional($profile->next_run_at)->toDateTimeString(),
+                'next_run_human' => optional($profile->next_run_at)?->diffForHumans(),
+                'runs' => $profile->runs->map(fn ($run) => [
+                    'id' => $run->id,
+                    'status' => $run->status,
+                    'status_variant' => $this->statusVariant($run->status),
+                    'created_at' => $run->created_at?->toDateTimeString(),
+                    'created_at_human' => $run->created_at?->diffForHumans(),
+                    'success_count' => $run->success_count,
+                    'processed_count' => $run->processed_count,
+                    'message' => $run->message,
+                ]),
+                'mappings' => [
+                    'product' => $profile->mappings
+                        ->where('target_type', 'product')
+                        ->pluck('source_field', 'target_field'),
+                    'category' => $profile->mappings
+                        ->where('target_type', 'category')
+                        ->pluck('source_field', 'target_field'),
+                ],
+            ])->values()
+            : collect();
+
+        return Inertia::render('Integrations/Edit', [
+            'integration' => array_merge(
+                $this->presentIntegration($integration),
+                [
+                    'description' => Arr::get($integration->config, 'description'),
+                    'config' => [
+                        'base_url' => Arr::get($integration->config, 'base_url'),
+                        'description' => Arr::get($integration->config, 'description'),
+                    ],
+                    'timestamps' => [
+                        'created_at' => $integration->created_at?->toDateTimeString(),
+                        'created_at_human' => $integration->created_at?->diffForHumans(),
+                        'updated_at' => $integration->updated_at?->toDateTimeString(),
+                        'updated_at_human' => $integration->updated_at?->diffForHumans(),
+                    ],
+                ]
+            ),
+            'driver_fields' => $this->driverFields($integration->type, isEdit: true),
+            'supports_import_profiles' => $integration->type === IntegrationType::CSV_XML_IMPORT,
+            'profiles' => $profiles->all(),
+            'profile_meta' => [
+                'product_fields' => $this->productMappingFields(),
+                'category_fields' => $this->categoryMappingFields(),
+            ],
+            'catalogs' => $catalogs->all(),
+            'can' => [
+                'delete' => $request->user()?->can('delete', $integration) ?? false,
+                'update' => $request->user()?->can('update', $integration) ?? false,
+            ],
         ]);
     }
 
@@ -134,5 +242,130 @@ class IntegrationController extends Controller
                 'integration' => $exception->getMessage(),
             ]);
         }
+    }
+
+    protected function presentIntegration(Integration $integration): array
+    {
+        return [
+            'id' => $integration->id,
+            'name' => $integration->name,
+            'type' => $integration->type->value,
+            'type_label' => $this->typeLabel($integration->type),
+            'type_icon' => $this->typeMetadata($integration->type)['icon'] ?? 'plug',
+            'status' => $integration->status->value,
+            'status_label' => Str::title($integration->status->value),
+            'status_variant' => $this->statusVariant($integration->status->value),
+            'last_synced_at' => $integration->last_synced_at?->toDateTimeString(),
+            'last_synced_human' => $integration->last_synced_at?->diffForHumans(),
+            'created_at_human' => $integration->created_at?->diffForHumans(),
+        ];
+    }
+
+    protected function integrationStats(Collection $integrations): array
+    {
+        return [
+            'total' => $integrations->count(),
+            'active' => $integrations->where('status', IntegrationStatus::ACTIVE)->count(),
+            'error' => $integrations->where('status', IntegrationStatus::ERROR)->count(),
+            'inactive' => $integrations->where('status', IntegrationStatus::INACTIVE)->count(),
+        ];
+    }
+
+    protected function typeMetadata(IntegrationType $type): array
+    {
+        $label = $this->typeLabel($type);
+
+        return [
+            'value' => $type->value,
+            'label' => $label,
+            'description' => match ($type) {
+                IntegrationType::PRESTASHOP => 'Dwukierunkowa synchronizacja produktów i stanów magazynowych z Prestashop.',
+                IntegrationType::CSV_XML_IMPORT => 'Elastyczny import produktów i kategorii z plików CSV/XML lub adresów URL.',
+            },
+            'icon' => match ($type) {
+                IntegrationType::PRESTASHOP => 'store',
+                IntegrationType::CSV_XML_IMPORT => 'file-stack',
+            },
+            'capabilities' => [
+                'import_profiles' => $type === IntegrationType::CSV_XML_IMPORT,
+            ],
+        ];
+    }
+
+    protected function typeLabel(IntegrationType $type): string
+    {
+        return Str::of($type->value)->replace('-', ' ')->title()->toString();
+    }
+
+    protected function driverFields(IntegrationType $type, bool $isEdit): array
+    {
+        return match ($type) {
+            IntegrationType::PRESTASHOP => [
+                [
+                    'name' => 'base_url',
+                    'label' => 'Adres podstawowy sklepu (Base URL)',
+                    'type' => 'url',
+                    'required' => true,
+                    'placeholder' => 'https://twoj-sklep.pl',
+                ],
+                [
+                    'name' => 'api_key',
+                    'label' => 'Klucz API',
+                    'type' => 'password',
+                    'required' => ! $isEdit,
+                    'placeholder' => $isEdit ? 'Pozostaw puste, aby zachować obecny klucz' : 'Wprowadź klucz API z Prestashop',
+                    'helper' => $isEdit
+                        ? 'Pozostaw puste, aby zachować obecny klucz API.'
+                        : 'Klucz API wygenerowany w panelu Prestashop (Uprawnienia: GET/POST).',
+                ],
+            ],
+            IntegrationType::CSV_XML_IMPORT => [],
+        };
+    }
+
+    protected function driverDefaultConfig(IntegrationType $type): array
+    {
+        return match ($type) {
+            IntegrationType::PRESTASHOP => [
+                'base_url' => '',
+                'api_key' => '',
+            ],
+            IntegrationType::CSV_XML_IMPORT => [],
+        };
+    }
+
+    protected function statusVariant(string $status): string
+    {
+        return match (strtolower($status)) {
+            'active', 'success', 'completed', 'ok' => 'default',
+            'error', 'failed', 'failure' => 'destructive',
+            'running', 'queued', 'scheduled', 'pending' => 'secondary',
+            default => 'secondary',
+        };
+    }
+
+    protected function productMappingFields(): array
+    {
+        return [
+            'sku' => 'SKU',
+            'name' => 'Nazwa produktu',
+            'description' => 'Opis',
+            'sale_price_net' => 'Cena sprzedaży netto',
+            'sale_vat_rate' => 'VAT sprzedaży (%)',
+            'purchase_price_net' => 'Cena zakupu netto',
+            'purchase_vat_rate' => 'VAT zakupu (%)',
+            'category_slug' => 'Slug kategorii',
+            'category_name' => 'Nazwa kategorii',
+        ];
+    }
+
+    protected function categoryMappingFields(): array
+    {
+        return [
+            'slug' => 'Slug kategorii',
+            'name' => 'Nazwa kategorii',
+            'parent_slug' => 'Slug kategorii nadrzędnej',
+            'parent_name' => 'Nazwa kategorii nadrzędnej',
+        ];
     }
 }
