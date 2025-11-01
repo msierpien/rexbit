@@ -36,7 +36,8 @@ class ProductController extends Controller
             $query->where(function ($builder) use ($filters): void {
                 $builder
                     ->where('name', 'like', '%'.$filters['search'].'%')
-                    ->orWhere('sku', 'like', '%'.$filters['search'].'%');
+                    ->orWhere('sku', 'like', '%'.$filters['search'].'%')
+                    ->orWhere('ean', 'like', '%'.$filters['search'].'%');
             });
         }
 

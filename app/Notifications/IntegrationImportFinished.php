@@ -3,6 +3,7 @@
 namespace App\Notifications;
 
 use App\Models\IntegrationImportRun;
+use App\Models\IntegrationTaskRun;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\BroadcastMessage;
@@ -13,7 +14,7 @@ class IntegrationImportFinished extends Notification implements ShouldQueue
     use Queueable;
 
     public function __construct(
-        protected ?IntegrationImportRun $run,
+        protected IntegrationImportRun|IntegrationTaskRun|null $run,
         protected bool $success = true,
         protected ?string $errorMessage = null
     ) {
@@ -36,9 +37,15 @@ class IntegrationImportFinished extends Notification implements ShouldQueue
 
     protected function payload(): array
     {
+        // Handle both IntegrationImportRun and IntegrationTaskRun
+        $taskId = $this->run instanceof IntegrationTaskRun 
+            ? $this->run->task_id 
+            : $this->run?->profile_id;
+
         return [
             'run_id' => $this->run?->id,
-            'profile_id' => $this->run?->profile_id,
+            'task_id' => $taskId,
+            'profile_id' => $this->run instanceof IntegrationImportRun ? $this->run->profile_id : null,
             'status' => $this->success ? 'completed' : 'failed',
             'processed' => $this->run?->processed_count,
             'success' => $this->run?->success_count,

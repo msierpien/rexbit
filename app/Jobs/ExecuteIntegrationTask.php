@@ -55,37 +55,51 @@ class ExecuteIntegrationTask implements ShouldQueue
             $runService->addLog($run, "Mappings kategorii: " . count($categoryMappings));
 
             // Parse file and create import chunks
-            $records = $parser->parse($resolved['path'], [
+            $records = $parser->iterate($resolved['path'], [
                 'delimiter' => $task->delimiter,
                 'has_header' => $task->has_header,
                 'record_path' => Arr::get($task->options, 'record_path'),
             ]);
 
-            $totalRecords = $records->count();
+            $chunkSize = 50;
+            $chunkJobs = [];
+            $productCatalogId = $task->catalog_id;
+            $currentChunk = [];
+            $totalRecords = 0;
+
+            // Process records in chunks directly from generator
+            foreach ($records as $record) {
+                $totalRecords++;
+                $currentChunk[] = $record;
+
+                if (count($currentChunk) >= $chunkSize) {
+                    $chunkJobs[] = new ProcessIntegrationImportChunk(
+                        $run->id,
+                        $currentChunk,
+                        $productMappings,
+                        $categoryMappings,
+                        $productCatalogId,
+                    );
+                    $currentChunk = [];
+                }
+            }
+
+            // Add remaining records as final chunk
+            if (!empty($currentChunk)) {
+                $chunkJobs[] = new ProcessIntegrationImportChunk(
+                    $run->id,
+                    $currentChunk,
+                    $productMappings,
+                    $categoryMappings,
+                    $productCatalogId,
+                );
+            }
+
             $runService->addLog($run, "Znaleziono {$totalRecords} rekordów");
 
             if ($totalRecords === 0) {
                 $runService->finish($run, 0, 0);
                 return;
-            }
-
-            $chunkSize = 50;
-            $chunkJobs = [];
-            $productCatalogId = $task->catalog_id;
-
-            // Process records in chunks
-            foreach ($records->chunk($chunkSize) as $chunkIndex => $chunk) {
-                if ($chunk->isEmpty()) {
-                    continue;
-                }
-
-                $chunkJobs[] = new ProcessIntegrationImportChunk(
-                    $run->id,
-                    $chunk->toArray(),
-                    $productMappings,
-                    $categoryMappings,
-                    $productCatalogId,
-                );
             }
 
             if (empty($chunkJobs)) {

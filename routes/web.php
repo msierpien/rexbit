@@ -7,6 +7,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ContractorController;
 use App\Http\Controllers\IntegrationImportProfileController;
 use App\Http\Controllers\IntegrationTaskController;
+use App\Http\Controllers\IntegrationTaskRunController;
 use App\Http\Controllers\ManufacturerController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ProductCatalogController;
@@ -56,6 +57,11 @@ Route::middleware(['auth', 'role:user,admin'])->group(function (): void {
         ->name('integrations.tasks.run');
     Route::post('/integrations/{integration}/tasks/{task}/mappings', [IntegrationTaskController::class, 'saveMappings'])
         ->name('integrations.tasks.mappings');
+
+    // Task runs
+    Route::resource('/task-runs', IntegrationTaskRunController::class)
+        ->names('task-runs')
+        ->only(['index', 'show']);
 
     // Backward compatibility (old routes redirect to new ones)
     Route::post('/integrations/{integration}/import-profiles', [IntegrationTaskController::class, 'store'])

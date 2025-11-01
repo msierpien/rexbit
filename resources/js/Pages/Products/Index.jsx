@@ -310,8 +310,23 @@ export default function ProductsIndex() {
                                                 />
                                             </td>
                                             <td className="px-4 py-3">
-                                                <div className="font-semibold text-gray-900">{product.name}</div>
-                                                <div className="text-xs text-gray-500">SKU: {product.sku}</div>
+                                                <div className="flex items-center gap-3">
+                                                    {product.images && product.images.length > 0 && (
+                                                        <img 
+                                                            src={product.images[0]} 
+                                                            alt={product.name}
+                                                            className="h-10 w-10 rounded object-cover flex-shrink-0"
+                                                            onError={(e) => { e.target.style.display = 'none'; }}
+                                                        />
+                                                    )}
+                                                    <div>
+                                                        <div className="font-semibold text-gray-900">{product.name}</div>
+                                                        <div className="text-xs text-gray-500 space-x-3">
+                                                            {product.sku && <span>SKU: {product.sku}</span>}
+                                                            {product.ean && <span>EAN: {product.ean}</span>}
+                                                        </div>
+                                                    </div>
+                                                </div>
                                             </td>
                                             <td className="px-4 py-3 text-gray-600">{product.catalog?.name ?? '—'}</td>
                                             <td className="px-4 py-3 text-gray-600">{product.category?.name ?? '—'}</td>
@@ -352,10 +367,23 @@ export default function ProductsIndex() {
                         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                             {products.data.map((product) => (
                                 <div key={product.id} className="rounded-xl border border-gray-200 p-4 shadow-sm">
+                                    {product.images && product.images.length > 0 && (
+                                        <div className="mb-3">
+                                            <img 
+                                                src={product.images[0]} 
+                                                alt={product.name}
+                                                className="h-32 w-full rounded-lg object-cover"
+                                                onError={(e) => { e.target.style.display = 'none'; }}
+                                            />
+                                        </div>
+                                    )}
                                     <div className="flex items-start justify-between">
                                         <div>
                                             <h3 className="text-base font-semibold text-gray-900">{product.name}</h3>
-                                            <p className="text-xs text-gray-500">SKU: {product.sku}</p>
+                                            <div className="text-xs text-gray-500 space-y-1">
+                                                {product.sku && <div>SKU: {product.sku}</div>}
+                                                {product.ean && <div>EAN: {product.ean}</div>}
+                                            </div>
                                         </div>
                                         <input
                                             type="checkbox"

@@ -14,6 +14,7 @@ const NAVIGATION_GROUPS = [
     {
         label: 'Produkty',
         items: [
+            { label: 'Katalogi', href: '/product-catalogs', match: ['/product-catalogs'], roles: ['admin', 'user'] },
             { label: 'Lista produktów', href: '/products', match: ['/products'], roles: ['admin', 'user'] },
             { label: 'Kategorie', href: '/product-categories', match: ['/product-categories'], roles: ['admin', 'user'] },
             { label: 'Ustawienia', href: '/products/settings', match: ['/products/settings'], roles: ['admin', 'user'] },
@@ -52,6 +53,7 @@ const NAVIGATION_GROUPS = [
         label: 'Integracje',
         items: [
             { label: 'Integracje', href: '/integrations', match: ['/integrations'], roles: ['admin', 'user'] },
+            { label: 'Historia zadań', href: '/task-runs', match: ['/task-runs'], roles: ['admin', 'user'] },
         ],
     },
     {

@@ -19,6 +19,8 @@
                     <x-ui.input label="Nazwa" name="name" :value="old('name', $product->name)" required />
                     <x-ui.input label="SKU" name="sku" :value="old('sku', $product->sku)" />
 
+                    <x-ui.input label="EAN" name="ean" :value="old('ean', $product->ean)" />
+
                     <x-ui.select
                         label="Katalog"
                         name="catalog_id"
@@ -64,6 +66,12 @@
                 <div>
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300" for="description">Opis</label>
                     <textarea id="description" name="description" class="mt-2 block w-full rounded-lg border-gray-300 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100" rows="6">{{ old('description', $product->description) }}</textarea>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300" for="images">Zdjęcia (URL)</label>
+                    <textarea id="images" name="images" class="mt-2 block w-full rounded-lg border-gray-300 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100" rows="3" placeholder="Wpisz URL zdjęć oddzielone przecinkami">{{ old('images', is_array($product->images) ? implode(', ', $product->images) : $product->images) }}</textarea>
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Wpisz adresy URL zdjęć oddzielone przecinkami</p>
                 </div>
 
                 <div class="flex items-center gap-3">

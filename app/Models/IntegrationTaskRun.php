@@ -15,24 +15,20 @@ class IntegrationTaskRun extends Model
         'status',
         'started_at',
         'finished_at',
-        'records_total',
-        'records_processed',
-        'records_imported',
-        'records_skipped',
-        'records_failed',
-        'error_message',
-        'log',
+        'processed_count',
+        'success_count',
+        'failure_count',
+        'message',
+        'meta',
     ];
 
     protected $casts = [
         'started_at' => 'datetime',
         'finished_at' => 'datetime',
-        'records_total' => 'integer',
-        'records_processed' => 'integer',
-        'records_imported' => 'integer',
-        'records_skipped' => 'integer',
-        'records_failed' => 'integer',
-        'log' => 'array',
+        'processed_count' => 'integer',
+        'success_count' => 'integer',
+        'failure_count' => 'integer',
+        'meta' => 'array',
     ];
 
     public function task(): BelongsTo

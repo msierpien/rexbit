@@ -9,33 +9,31 @@ class TaskRunService
 {
     public function start(IntegrationTask $task): IntegrationTaskRun
     {
-        $run = new IntegrationTaskRun([
+        $run = $task->runs()->create([
             'status' => 'running',
             'started_at' => now(),
-            'records_total' => 0,
-            'records_processed' => 0,
-            'records_imported' => 0,
-            'records_skipped' => 0,
-            'records_failed' => 0,
-            'log' => [],
+            'processed_count' => 0,
+            'success_count' => 0,
+            'failure_count' => 0,
+            'meta' => [],
         ]);
 
-        $task->runs()->save($run);
-
-        return $run->refresh();
+        return $run;
     }
 
     public function markQueued(IntegrationTaskRun $run, int $chunks): IntegrationTaskRun
     {
-        $log = $run->log ?? [];
+        $meta = $run->meta ?? [];
+        $log = $meta['log'] ?? [];
         $log[] = [
             'timestamp' => now()->toISOString(),
             'message' => "Zaplanowano {$chunks} chunków do przetworzenia",
             'level' => 'info',
         ];
+        $meta['log'] = $log;
 
         $run->forceFill([
-            'log' => $log,
+            'meta' => $meta,
         ])->save();
 
         return $run->refresh();
@@ -43,19 +41,19 @@ class TaskRunService
 
     public function finish(IntegrationTaskRun $run, int $imported, int $processed): IntegrationTaskRun
     {
-        $log = $run->log ?? [];
+        $meta = $run->meta ?? [];
+        $log = $meta['log'] ?? [];
         $log[] = [
             'timestamp' => now()->toISOString(),
             'message' => "Import zakończony: {$imported}/{$processed} rekordów",
             'level' => 'success',
         ];
+        $meta['log'] = $log;
 
         $run->forceFill([
             'status' => 'completed',
-            'records_imported' => $imported,
-            'records_processed' => $processed,
             'finished_at' => now(),
-            'log' => $log,
+            'meta' => $meta,
         ])->save();
 
         return $run->refresh();
@@ -63,18 +61,20 @@ class TaskRunService
 
     public function fail(IntegrationTaskRun $run, string $message): IntegrationTaskRun
     {
-        $log = $run->log ?? [];
+        $meta = $run->meta ?? [];
+        $log = $meta['log'] ?? [];
         $log[] = [
             'timestamp' => now()->toISOString(),
             'message' => $message,
             'level' => 'error',
         ];
+        $meta['log'] = $log;
 
         $run->forceFill([
             'status' => 'failed',
             'finished_at' => now(),
-            'error_message' => $message,
-            'log' => $log,
+            'message' => $message,
+            'meta' => $meta,
         ])->save();
 
         return $run->refresh();
@@ -85,10 +85,12 @@ class TaskRunService
      */
     public function addLog(IntegrationTaskRun $run, string $message): void
     {
-        $currentLog = $run->log ?? [];
+        $meta = $run->meta ?? [];
+        $currentLog = $meta['log'] ?? [];
         $currentLog[] = '[' . now()->format('Y-m-d H:i:s') . '] ' . $message;
+        $meta['log'] = $currentLog;
         
-        $run->update(['log' => $currentLog]);
+        $run->update(['meta' => $meta]);
     }
 
     /**

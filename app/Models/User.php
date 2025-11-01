@@ -127,4 +127,13 @@ class User extends Authenticatable
     {
         return $this->hasMany(WarehouseDocumentSetting::class);
     }
+
+    public function integrationTaskRuns()
+    {
+        return IntegrationTaskRun::query()
+            ->join('integration_tasks', 'integration_task_runs.task_id', '=', 'integration_tasks.id')
+            ->join('integrations', 'integration_tasks.integration_id', '=', 'integrations.id')
+            ->where('integrations.user_id', $this->id)
+            ->select('integration_task_runs.*');
+    }
 }

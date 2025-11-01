@@ -22,6 +22,18 @@ class ProductService
         $payload = $this->validate($attributes);
         $this->assertOwnership($user, $payload);
 
+        // Process images field - convert comma-separated string to array
+        if (isset($payload['images'])) {
+            if (is_string($payload['images']) && !empty($payload['images'])) {
+                $payload['images'] = array_filter(
+                    array_map('trim', explode(',', $payload['images'])),
+                    fn($url) => !empty($url)
+                );
+            } elseif (empty($payload['images'])) {
+                $payload['images'] = null;
+            }
+        }
+
         $product = new Product($payload);
         $product->user()->associate($user);
         $product->slug = $this->generateUniqueSlug($user, $payload['catalog_id'], $payload['name'], $payload['slug'] ?? null);
@@ -50,6 +62,18 @@ class ProductService
             );
         }
 
+        // Process images field - convert comma-separated string to array
+        if (isset($payload['images'])) {
+            if (is_string($payload['images']) && !empty($payload['images'])) {
+                $payload['images'] = array_filter(
+                    array_map('trim', explode(',', $payload['images'])),
+                    fn($url) => !empty($url)
+                );
+            } elseif (empty($payload['images'])) {
+                $payload['images'] = null;
+            }
+        }
+
         $product->fill($payload)->save();
 
         return $product->fresh();
@@ -71,8 +95,10 @@ class ProductService
             'category_id' => ['nullable', 'exists:product_categories,id'],
             'slug' => ['nullable', 'string'],
             'sku' => ['nullable', 'string', 'max:255'],
+            'ean' => ['nullable', 'string', 'max:50'],
             'name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
+            'images' => ['nullable', 'string'],
             'purchase_price_net' => ['nullable', 'numeric', 'min:0'],
             'purchase_vat_rate' => ['nullable', 'integer', 'between:0,99'],
             'sale_price_net' => ['nullable', 'numeric', 'min:0'],
