@@ -30,7 +30,7 @@ class ProductController extends Controller
             'per_page' => (int) $request->integer('per_page', 15),
         ];
 
-        $query = $request->user()->products()->with(['category', 'catalog', 'manufacturer']);
+        $query = $request->user()->products()->with(['category.catalog', 'catalog', 'manufacturer']);
 
         if ($filters['search']) {
             $query->where(function ($builder) use ($filters): void {
@@ -60,14 +60,29 @@ class ProductController extends Controller
             ->through(fn (Product $product) => [
                 'id' => $product->id,
                 'name' => $product->name,
+                'slug' => $product->slug,
                 'sku' => $product->sku,
+                'ean' => $product->ean,
+                'description' => $product->description,
+                'catalog_id' => $product->catalog_id,
+                'category_id' => $product->category_id,
+                'manufacturer_id' => $product->manufacturer_id,
                 'status' => $product->status?->value,
                 'status_label' => Str::title($product->status?->value ?? 'unknown'),
                 'catalog' => $product->catalog?->only(['id', 'name']),
-                'category' => $product->category?->only(['id', 'name']),
+                'category' => $product->category
+                    ? [
+                        'id' => $product->category->id,
+                        'name' => $product->category->name,
+                        'catalog_name' => $product->category->catalog?->name,
+                    ]
+                    : null,
                 'manufacturer' => $product->manufacturer?->only(['id', 'name']),
+                'purchase_price_net' => $product->purchase_price_net,
+                'purchase_vat_rate' => $product->purchase_vat_rate,
                 'sale_price_net' => $product->sale_price_net,
                 'sale_vat_rate' => $product->sale_vat_rate,
+                'images' => $product->images,
                 'updated_at' => $product->updated_at?->toDateTimeString(),
             ]);
 
@@ -75,8 +90,22 @@ class ProductController extends Controller
             'products' => $products,
             'filters' => $filters,
             'options' => [
-                'catalogs' => $request->user()->productCatalogs()->orderBy('name')->get(['id', 'name']),
-                'categories' => $request->user()->productCategories()->orderBy('name')->get(['id', 'name', 'catalog_id']),
+                'catalogs' => $request->user()->productCatalogs()
+                    ->orderBy('name')
+                    ->get()
+                    ->map(fn ($catalog) => $catalog->only(['id', 'name']))
+                    ->values(),
+                'categories' => $request->user()->productCategories()
+                    ->with('catalog:id,name')
+                    ->orderBy('name')
+                    ->get()
+                    ->map(fn ($category) => [
+                        'id' => $category->id,
+                        'name' => $category->name,
+                        'catalog_id' => $category->catalog_id,
+                        'catalog_name' => $category->catalog?->name,
+                    ])
+                    ->values(),
                 'manufacturers' => $request->user()->manufacturers()->orderBy('name')->get(['id', 'name']),
                 'statuses' => collect(ProductStatus::cases())->map(fn ($status) => [
                     'value' => $status->value,
@@ -95,7 +124,6 @@ class ProductController extends Controller
         $categories = $request->user()->productCategories()->with('catalog')->orderBy('name')->get();
         $manufacturers = $request->user()->manufacturers()->orderBy('name')->get();
 
-        // If request expects JSON (for modal), return data
         if ($request->expectsJson()) {
             return response()->json([
                 'catalogs' => $catalogs,
@@ -104,15 +132,13 @@ class ProductController extends Controller
             ]);
         }
 
-        // Otherwise, return Blade view
-        return view('catalog.products.create', compact('catalogs', 'categories', 'manufacturers'));
+        abort(404);
     }
 
     public function store(Request $request)
     {
         $product = $this->service->create($request->user(), $request->all());
 
-        // If request expects JSON (for modal), return JSON response
         if ($request->expectsJson()) {
             return response()->json([
                 'success' => true,
@@ -121,8 +147,10 @@ class ProductController extends Controller
             ]);
         }
 
-        // Otherwise, redirect as before
-        return redirect()->route('products.edit', $product)->with('status', 'Produkt został utworzony.');
+        return redirect()
+            ->route('products.index')
+            ->with('status', 'Produkt został utworzony.')
+            ->setStatusCode(303);
     }
 
     public function edit(Product $product, Request $request)
@@ -131,7 +159,6 @@ class ProductController extends Controller
         $categories = $request->user()->productCategories()->with('catalog')->orderBy('name')->get();
         $manufacturers = $request->user()->manufacturers()->orderBy('name')->get();
 
-        // If request expects JSON (for modal), return data
         if ($request->expectsJson()) {
             return response()->json([
                 'product' => $product,
@@ -141,15 +168,13 @@ class ProductController extends Controller
             ]);
         }
 
-        // Otherwise, return Blade view
-        return view('catalog.products.edit', compact('product', 'catalogs', 'categories', 'manufacturers'));
+        abort(404);
     }
 
     public function update(Request $request, Product $product)
     {
         $updatedProduct = $this->service->update($product, $request->all());
 
-        // If request expects JSON (for modal), return JSON response
         if ($request->expectsJson()) {
             return response()->json([
                 'success' => true,
@@ -158,8 +183,10 @@ class ProductController extends Controller
             ]);
         }
 
-        // Otherwise, redirect as before
-        return redirect()->route('products.edit', $product)->with('status', 'Produkt został zaktualizowany.');
+        return redirect()
+            ->route('products.index')
+            ->with('status', 'Produkt został zaktualizowany.')
+            ->setStatusCode(303);
     }
 
     public function destroy(Product $product): RedirectResponse

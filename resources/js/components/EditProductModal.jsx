@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useForm, router } from '@inertiajs/react';
+import { router, usePage } from '@inertiajs/react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,15 +7,18 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
-export default function EditProductModal({ 
-    open, 
-    onClose, 
-    product, 
-    catalogs = [], 
-    categories = [], 
-    manufacturers = [] 
+const NONE_OPTION = '__none__';
+
+export default function EditProductModal({
+    open,
+    onClose,
+    product,
+    catalogs = [],
+    categories = [],
+    manufacturers = [],
 }) {
-    const { data, setData, put, processing, errors, reset } = useForm({
+    const { errors = {} } = usePage().props;
+    const [formData, setFormData] = useState({
         name: '',
         sku: '',
         ean: '',
@@ -37,69 +40,130 @@ export default function EditProductModal({
     // Update form data when product changes
     useEffect(() => {
         if (product) {
-            console.log('Product data in modal:', product);
-            setData({
-                name: product.name || '',
-                sku: product.sku || '',
-                ean: product.ean || '',
-                slug: product.slug || '',
-                catalog_id: product.catalog_id || '',
-                category_id: product.category_id || '',
-                manufacturer_id: product.manufacturer_id || '',
-                description: product.description || '',
-                images: Array.isArray(product.images) ? product.images.join(', ') : (product.images || ''),
-                purchase_price_net: product.purchase_price_net || '',
-                purchase_vat_rate: product.purchase_vat_rate || '',
-                sale_price_net: product.sale_price_net || '',
-                sale_vat_rate: product.sale_vat_rate || '',
-                status: product.status || 'active',
+            setFormData({
+                name: product.name ?? '',
+                sku: product.sku ?? '',
+                ean: product.ean ?? '',
+                slug: product.slug ?? '',
+                catalog_id: product.catalog_id ? String(product.catalog_id) : '',
+                category_id: product.category_id ? String(product.category_id) : '',
+                manufacturer_id: product.manufacturer_id ? String(product.manufacturer_id) : '',
+                description: product.description ?? '',
+                images: Array.isArray(product.images) ? product.images.join(', ') : product.images ?? '',
+                purchase_price_net: product.purchase_price_net !== null && product.purchase_price_net !== undefined
+                    ? String(product.purchase_price_net)
+                    : '',
+                purchase_vat_rate: product.purchase_vat_rate !== null && product.purchase_vat_rate !== undefined
+                    ? String(product.purchase_vat_rate)
+                    : '',
+                sale_price_net: product.sale_price_net !== null && product.sale_price_net !== undefined
+                    ? String(product.sale_price_net)
+                    : '',
+                sale_vat_rate: product.sale_vat_rate !== null && product.sale_vat_rate !== undefined
+                    ? String(product.sale_vat_rate)
+                    : '',
+                status: product.status ?? 'active',
             });
         }
     }, [product]);
 
     // Update image preview when images field changes
     useEffect(() => {
-        if (data.images) {
-            const urls = data.images.split(',').map(url => url.trim()).filter(url => url);
+        if (formData.images) {
+            const urls = formData.images.split(',').map((url) => url.trim()).filter((url) => url);
             setImagePreview(urls);
         } else {
             setImagePreview([]);
         }
-    }, [data.images]);
+    }, [formData.images]);
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        
+
         if (!product) return;
-        
-        router.put(route('products.update', product.id), data, {
+
+        const payload = {
+            ...formData,
+            catalog_id: formData.catalog_id ? Number(formData.catalog_id) : null,
+            category_id: formData.category_id ? Number(formData.category_id) : null,
+            manufacturer_id: formData.manufacturer_id ? Number(formData.manufacturer_id) : null,
+            purchase_price_net: formData.purchase_price_net !== '' ? Number(formData.purchase_price_net) : null,
+            purchase_vat_rate: formData.purchase_vat_rate !== '' ? Number(formData.purchase_vat_rate) : null,
+            sale_price_net: formData.sale_price_net !== '' ? Number(formData.sale_price_net) : null,
+            sale_vat_rate: formData.sale_vat_rate !== '' ? Number(formData.sale_vat_rate) : null,
+        };
+
+        router.put(`/products/${product.id}`, payload, {
             preserveScroll: true,
-            headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json',
-            },
             onSuccess: () => {
                 onClose();
-                reset();
+                setFormData({
+                    name: '',
+                    sku: '',
+                    ean: '',
+                    slug: '',
+                    catalog_id: '',
+                    category_id: '',
+                    manufacturer_id: '',
+                    description: '',
+                    images: '',
+                    purchase_price_net: '',
+                    purchase_vat_rate: '',
+                    sale_price_net: '',
+                    sale_vat_rate: '',
+                    status: 'active',
+                });
             },
-            onError: (errors) => {
-                console.error('Update errors:', errors);
-            }
+            onError: (validationErrors) => {
+                console.error('Update errors:', validationErrors);
+            },
         });
     };
 
-    const handleClose = () => {
-        onClose();
-        reset();
+    const handleOpenChange = (nextOpen) => {
+        if (!nextOpen) {
+            onClose();
+            setFormData({
+                name: '',
+                sku: '',
+                ean: '',
+                slug: '',
+                catalog_id: '',
+                category_id: '',
+                manufacturer_id: '',
+                description: '',
+                images: '',
+                purchase_price_net: '',
+                purchase_vat_rate: '',
+                sale_price_net: '',
+                sale_vat_rate: '',
+                status: 'active',
+            });
+            setImagePreview([]);
+        }
     };
 
     // Filter categories based on selected catalog
-    const filteredCategories = categories.filter(category => 
-        !data.catalog_id || category.catalog_id === parseInt(data.catalog_id)
+    const filteredCategories = categories.filter(
+        (category) => !formData.catalog_id || Number(category.catalog_id) === Number(formData.catalog_id),
     );
 
+    useEffect(() => {
+        if (!formData.catalog_id) {
+            return;
+        }
+
+        const belongsToCatalog = filteredCategories.some(
+            (category) => category.id.toString() === formData.category_id,
+        );
+
+        if (!belongsToCatalog) {
+            setFormData((prev) => ({ ...prev, category_id: '' }));
+        }
+    }, [formData.catalog_id, filteredCategories]);
+
     return (
-        <Dialog open={open} onOpenChange={handleClose}>
+        <Dialog open={open} onOpenChange={handleOpenChange}>
             <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                     <DialogTitle>Edytuj produkt</DialogTitle>
@@ -115,12 +179,10 @@ export default function EditProductModal({
                             <Input
                                 id="name"
                                 type="text"
-                                value={data.name}
-                                onChange={(e) => setData('name', e.target.value)}
-                                className={errors.name ? 'border-red-500' : ''}
+                                value={formData.name}
+                                onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
                                 required
                             />
-                            {errors.name && <p className="text-sm text-red-500">{errors.name}</p>}
                         </div>
 
                         <div className="space-y-2">
@@ -128,11 +190,9 @@ export default function EditProductModal({
                             <Input
                                 id="sku"
                                 type="text"
-                                value={data.sku}
-                                onChange={(e) => setData('sku', e.target.value)}
-                                className={errors.sku ? 'border-red-500' : ''}
+                                value={formData.sku}
+                                onChange={(e) => setFormData((prev) => ({ ...prev, sku: e.target.value }))}
                             />
-                            {errors.sku && <p className="text-sm text-red-500">{errors.sku}</p>}
                         </div>
 
                         <div className="space-y-2">
@@ -140,12 +200,10 @@ export default function EditProductModal({
                             <Input
                                 id="ean"
                                 type="text"
-                                value={data.ean}
-                                onChange={(e) => setData('ean', e.target.value)}
-                                className={errors.ean ? 'border-red-500' : ''}
+                                value={formData.ean}
+                                onChange={(e) => setFormData((prev) => ({ ...prev, ean: e.target.value }))}
                                 maxLength={50}
                             />
-                            {errors.ean && <p className="text-sm text-red-500">{errors.ean}</p>}
                         </div>
 
                         <div className="space-y-2">
@@ -153,18 +211,19 @@ export default function EditProductModal({
                             <Input
                                 id="slug"
                                 type="text"
-                                value={data.slug}
-                                onChange={(e) => setData('slug', e.target.value)}
-                                className={errors.slug ? 'border-red-500' : ''}
+                                value={formData.slug}
+                                onChange={(e) => setFormData((prev) => ({ ...prev, slug: e.target.value }))}
                                 placeholder="Pozostaw puste aby wygenerować automatycznie"
                             />
-                            {errors.slug && <p className="text-sm text-red-500">{errors.slug}</p>}
                         </div>
 
                         <div className="space-y-2">
                             <Label htmlFor="catalog_id">Katalog *</Label>
-                            <Select value={data.catalog_id.toString()} onValueChange={(value) => setData('catalog_id', value)}>
-                                <SelectTrigger className={errors.catalog_id ? 'border-red-500' : ''}>
+                            <Select
+                                value={formData.catalog_id || undefined}
+                                onValueChange={(value) => setFormData((prev) => ({ ...prev, catalog_id: value }))}
+                            >
+                                <SelectTrigger>
                                     <SelectValue placeholder="Wybierz katalog" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -175,33 +234,50 @@ export default function EditProductModal({
                                     ))}
                                 </SelectContent>
                             </Select>
-                            {errors.catalog_id && <p className="text-sm text-red-500">{errors.catalog_id}</p>}
                         </div>
 
                         <div className="space-y-2">
                             <Label htmlFor="category_id">Kategoria</Label>
-                            <Select value={data.category_id.toString()} onValueChange={(value) => setData('category_id', value)}>
-                                <SelectTrigger className={errors.category_id ? 'border-red-500' : ''}>
-                                    <SelectValue placeholder="Wybierz kategorię" />
+                            <Select
+                                value={formData.category_id || NONE_OPTION}
+                                onValueChange={(value) =>
+                                    setFormData((prev) => ({
+                                        ...prev,
+                                        category_id: value === NONE_OPTION ? '' : value,
+                                    }))
+                                }
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Brak" />
                                 </SelectTrigger>
                                 <SelectContent>
+                                    <SelectItem value={NONE_OPTION}>Brak</SelectItem>
                                     {filteredCategories.map((category) => (
                                         <SelectItem key={category.id} value={category.id.toString()}>
-                                            {category.catalog?.name ? `${category.catalog.name} › ` : ''}{category.name}
+                                            {category.catalog_name ? `${category.catalog_name} › ` : ''}
+                                            {category.name}
                                         </SelectItem>
                                     ))}
                                 </SelectContent>
                             </Select>
-                            {errors.category_id && <p className="text-sm text-red-500">{errors.category_id}</p>}
                         </div>
 
                         <div className="space-y-2">
                             <Label htmlFor="manufacturer_id">Producent</Label>
-                            <Select value={data.manufacturer_id.toString()} onValueChange={(value) => setData('manufacturer_id', value)}>
-                                <SelectTrigger className={errors.manufacturer_id ? 'border-red-500' : ''}>
-                                    <SelectValue placeholder="Wybierz producenta" />
+                            <Select
+                                value={formData.manufacturer_id || NONE_OPTION}
+                                onValueChange={(value) =>
+                                    setFormData((prev) => ({
+                                        ...prev,
+                                        manufacturer_id: value === NONE_OPTION ? '' : value,
+                                    }))
+                                }
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Brak" />
                                 </SelectTrigger>
                                 <SelectContent>
+                                    <SelectItem value={NONE_OPTION}>Brak</SelectItem>
                                     {manufacturers.map((manufacturer) => (
                                         <SelectItem key={manufacturer.id} value={manufacturer.id.toString()}>
                                             {manufacturer.name}
@@ -209,13 +285,15 @@ export default function EditProductModal({
                                     ))}
                                 </SelectContent>
                             </Select>
-                            {errors.manufacturer_id && <p className="text-sm text-red-500">{errors.manufacturer_id}</p>}
                         </div>
 
                         <div className="space-y-2">
                             <Label htmlFor="status">Status</Label>
-                            <Select value={data.status} onValueChange={(value) => setData('status', value)}>
-                                <SelectTrigger className={errors.status ? 'border-red-500' : ''}>
+                            <Select
+                                value={formData.status}
+                                onValueChange={(value) => setFormData((prev) => ({ ...prev, status: value }))}
+                            >
+                                <SelectTrigger>
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -224,7 +302,6 @@ export default function EditProductModal({
                                     <SelectItem value="archived">Archiwum</SelectItem>
                                 </SelectContent>
                             </Select>
-                            {errors.status && <p className="text-sm text-red-500">{errors.status}</p>}
                         </div>
                     </div>
 
@@ -236,11 +313,9 @@ export default function EditProductModal({
                                 id="purchase_price_net"
                                 type="number"
                                 step="0.01"
-                                value={data.purchase_price_net}
-                                onChange={(e) => setData('purchase_price_net', e.target.value)}
-                                className={errors.purchase_price_net ? 'border-red-500' : ''}
+                                value={formData.purchase_price_net}
+                                onChange={(e) => setFormData((prev) => ({ ...prev, purchase_price_net: e.target.value }))}
                             />
-                            {errors.purchase_price_net && <p className="text-sm text-red-500">{errors.purchase_price_net}</p>}
                         </div>
 
                         <div className="space-y-2">
@@ -248,13 +323,13 @@ export default function EditProductModal({
                             <Input
                                 id="purchase_vat_rate"
                                 type="number"
-                                value={data.purchase_vat_rate}
-                                onChange={(e) => setData('purchase_vat_rate', e.target.value)}
-                                className={errors.purchase_vat_rate ? 'border-red-500' : ''}
+                                value={formData.purchase_vat_rate}
+                                onChange={(e) =>
+                                    setFormData((prev) => ({ ...prev, purchase_vat_rate: e.target.value }))
+                                }
                                 min="0"
                                 max="99"
                             />
-                            {errors.purchase_vat_rate && <p className="text-sm text-red-500">{errors.purchase_vat_rate}</p>}
                         </div>
 
                         <div className="space-y-2">
@@ -263,11 +338,9 @@ export default function EditProductModal({
                                 id="sale_price_net"
                                 type="number"
                                 step="0.01"
-                                value={data.sale_price_net}
-                                onChange={(e) => setData('sale_price_net', e.target.value)}
-                                className={errors.sale_price_net ? 'border-red-500' : ''}
+                                value={formData.sale_price_net}
+                                onChange={(e) => setFormData((prev) => ({ ...prev, sale_price_net: e.target.value }))}
                             />
-                            {errors.sale_price_net && <p className="text-sm text-red-500">{errors.sale_price_net}</p>}
                         </div>
 
                         <div className="space-y-2">
@@ -275,13 +348,11 @@ export default function EditProductModal({
                             <Input
                                 id="sale_vat_rate"
                                 type="number"
-                                value={data.sale_vat_rate}
-                                onChange={(e) => setData('sale_vat_rate', e.target.value)}
-                                className={errors.sale_vat_rate ? 'border-red-500' : ''}
+                                value={formData.sale_vat_rate}
+                                onChange={(e) => setFormData((prev) => ({ ...prev, sale_vat_rate: e.target.value }))}
                                 min="0"
                                 max="99"
                             />
-                            {errors.sale_vat_rate && <p className="text-sm text-red-500">{errors.sale_vat_rate}</p>}
                         </div>
                     </div>
 
@@ -290,12 +361,10 @@ export default function EditProductModal({
                         <Label htmlFor="description">Opis</Label>
                         <Textarea
                             id="description"
-                            value={data.description}
-                            onChange={(e) => setData('description', e.target.value)}
-                            className={errors.description ? 'border-red-500' : ''}
+                            value={formData.description}
+                            onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
                             rows={4}
                         />
-                        {errors.description && <p className="text-sm text-red-500">{errors.description}</p>}
                     </div>
 
                     {/* Images */}
@@ -303,15 +372,13 @@ export default function EditProductModal({
                         <Label htmlFor="images">Zdjęcia (URL)</Label>
                         <Textarea
                             id="images"
-                            value={data.images}
-                            onChange={(e) => setData('images', e.target.value)}
-                            className={errors.images ? 'border-red-500' : ''}
+                            value={formData.images}
+                            onChange={(e) => setFormData((prev) => ({ ...prev, images: e.target.value }))}
                             rows={3}
                             placeholder="Wpisz URL zdjęć oddzielone przecinkami"
                         />
-                        {errors.images && <p className="text-sm text-red-500">{errors.images}</p>}
                         <p className="text-xs text-gray-500">Wpisz adresy URL zdjęć oddzielone przecinkami</p>
-                        
+
                         {/* Image Preview */}
                         {imagePreview.length > 0 && (
                             <div className="mt-4">
@@ -342,11 +409,11 @@ export default function EditProductModal({
 
                     {/* Actions */}
                     <div className="flex items-center justify-end gap-3 pt-4 border-t">
-                        <Button type="button" variant="outline" onClick={handleClose} disabled={processing}>
+                        <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
                             Anuluj
                         </Button>
-                        <Button type="submit" disabled={processing}>
-                            {processing ? 'Zapisywanie...' : 'Zapisz zmiany'}
+                        <Button type="submit">
+                            Zapisz zmiany
                         </Button>
                     </div>
                 </form>
