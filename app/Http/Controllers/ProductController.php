@@ -95,13 +95,33 @@ class ProductController extends Controller
         $categories = $request->user()->productCategories()->with('catalog')->orderBy('name')->get();
         $manufacturers = $request->user()->manufacturers()->orderBy('name')->get();
 
+        // If request expects JSON (for modal), return data
+        if ($request->expectsJson()) {
+            return response()->json([
+                'catalogs' => $catalogs,
+                'categories' => $categories,
+                'manufacturers' => $manufacturers,
+            ]);
+        }
+
+        // Otherwise, return Blade view
         return view('catalog.products.create', compact('catalogs', 'categories', 'manufacturers'));
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request)
     {
         $product = $this->service->create($request->user(), $request->all());
 
+        // If request expects JSON (for modal), return JSON response
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Produkt został utworzony.',
+                'product' => $product->load(['catalog', 'category', 'manufacturer']),
+            ]);
+        }
+
+        // Otherwise, redirect as before
         return redirect()->route('products.edit', $product)->with('status', 'Produkt został utworzony.');
     }
 
@@ -111,13 +131,34 @@ class ProductController extends Controller
         $categories = $request->user()->productCategories()->with('catalog')->orderBy('name')->get();
         $manufacturers = $request->user()->manufacturers()->orderBy('name')->get();
 
+        // If request expects JSON (for modal), return data
+        if ($request->expectsJson()) {
+            return response()->json([
+                'product' => $product,
+                'catalogs' => $catalogs,
+                'categories' => $categories,
+                'manufacturers' => $manufacturers,
+            ]);
+        }
+
+        // Otherwise, return Blade view
         return view('catalog.products.edit', compact('product', 'catalogs', 'categories', 'manufacturers'));
     }
 
-    public function update(Request $request, Product $product): RedirectResponse
+    public function update(Request $request, Product $product)
     {
-        $this->service->update($product, $request->all());
+        $updatedProduct = $this->service->update($product, $request->all());
 
+        // If request expects JSON (for modal), return JSON response
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Produkt został zaktualizowany.',
+                'product' => $updatedProduct->load(['catalog', 'category', 'manufacturer']),
+            ]);
+        }
+
+        // Otherwise, redirect as before
         return redirect()->route('products.edit', $product)->with('status', 'Produkt został zaktualizowany.');
     }
 

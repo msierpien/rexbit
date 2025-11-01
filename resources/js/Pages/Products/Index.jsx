@@ -2,6 +2,8 @@ import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { useEffect, useMemo, useState } from 'react';
 import DashboardLayout from '@/Layouts/DashboardLayout.jsx';
 import { Button } from '@/components/ui/button.jsx';
+import CreateProductModal from '@/components/CreateProductModal.jsx';
+import EditProductModal from '@/components/EditProductModal.jsx';
 
 const viewModes = [
     { value: 'table', label: 'Tabela' },
@@ -9,18 +11,6 @@ const viewModes = [
 ];
 
 const perPageOptions = [10, 15, 30, 50];
-
-const defaultProductForm = {
-    name: '',
-    sku: '',
-    catalog_id: '',
-    category_id: '',
-    manufacturer_id: '',
-    sale_price_net: '',
-    sale_vat_rate: '',
-    status: 'active',
-    description: '',
-};
 
 function FilterSelect({ label, value, onChange, options, placeholder }) {
     return (
@@ -75,14 +65,8 @@ export default function ProductsIndex() {
     const [viewMode, setViewMode] = useState(filters.view ?? 'table');
     const [selected, setSelected] = useState([]);
     const [isCreateOpen, setIsCreateOpen] = useState(false);
-
-    const {
-        data: formData,
-        setData,
-        post,
-        processing,
-        reset,
-    } = useForm({ ...defaultProductForm });
+    const [isEditOpen, setIsEditOpen] = useState(false);
+    const [editingProduct, setEditingProduct] = useState(null);
 
     const filterCategories = useMemo(() => {
         if (!filters.catalog) {
@@ -91,14 +75,6 @@ export default function ProductsIndex() {
 
         return options.categories.filter((category) => category.catalog_id === Number(filters.catalog));
     }, [filters.catalog, options.categories]);
-
-    const formCategories = useMemo(() => {
-        if (!formData.catalog_id) {
-            return options.categories;
-        }
-
-        return options.categories.filter((category) => category.catalog_id === Number(formData.catalog_id));
-    }, [formData.catalog_id, options.categories]);
 
     useEffect(() => {
         setSelected([]);
@@ -147,7 +123,6 @@ export default function ProductsIndex() {
     const massActionDisabled = selected.length === 0;
 
     const openCreateModal = () => {
-        reset();
         setIsCreateOpen(true);
     };
 
@@ -155,16 +130,14 @@ export default function ProductsIndex() {
         setIsCreateOpen(false);
     };
 
-    const submitCreate = (event) => {
-        event.preventDefault();
+    const openEditModal = (product) => {
+        setEditingProduct(product);
+        setIsEditOpen(true);
+    };
 
-        post('/products', {
-            preserveScroll: true,
-            onSuccess: () => {
-                closeCreateModal();
-                reset();
-            },
-        });
+    const closeEditModal = () => {
+        setIsEditOpen(false);
+        setEditingProduct(null);
     };
 
     return (
@@ -340,8 +313,8 @@ export default function ProductsIndex() {
                                             </td>
                                             <td className="px-4 py-3 text-right">
                                                 <div className="flex justify-end gap-2">
-                                                    <Button variant="outline" size="sm" asChild>
-                                                        <Link href={`/products/${product.id}/edit`}>Edytuj</Link>
+                                                    <Button variant="outline" size="sm" onClick={() => openEditModal(product)}>
+                                                        Edytuj
                                                     </Button>
                                                     <Button
                                                         variant="destructive"
@@ -415,8 +388,8 @@ export default function ProductsIndex() {
                                         </div>
                                     </dl>
                                     <div className="mt-4 flex gap-2">
-                                        <Button variant="outline" asChild className="flex-1">
-                                            <Link href={`/products/${product.id}/edit`}>Edytuj</Link>
+                                        <Button variant="outline" className="flex-1" onClick={() => openEditModal(product)}>
+                                            Edytuj
                                         </Button>
                                         <Button
                                             variant="destructive"
@@ -439,167 +412,24 @@ export default function ProductsIndex() {
                     <Pagination meta={products.meta} />
                 </div>
 
-                {isCreateOpen && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-                        <div className="w-full max-w-3xl rounded-xl bg-white p-6 shadow-xl">
-                            <div className="flex items-center justify-between">
-                                <h2 className="text-lg font-semibold text-gray-900">Dodaj produkt</h2>
-                                <button
-                                    type="button"
-                                    className="rounded-full p-2 text-gray-500 hover:bg-gray-100"
-                                    onClick={closeCreateModal}
-                                    aria-label="Zamknij"
-                                >
-                                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
-                                    </svg>
-                                </button>
-                            </div>
 
-                            <form className="mt-6 space-y-4" onSubmit={submitCreate}>
-                                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                                    <label className="flex flex-col gap-1 text-sm text-gray-700">
-                                        <span>Nazwa</span>
-                                        <input
-                                            type="text"
-                                            value={formData.name}
-                                            onChange={(event) => setData('name', event.target.value)}
-                                            className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
-                                            required
-                                        />
-                                        {errors?.name && <span className="text-xs text-red-600">{errors.name}</span>}
-                                    </label>
 
-                                    <label className="flex flex-col gap-1 text-sm text-gray-700">
-                                        <span>SKU</span>
-                                        <input
-                                            type="text"
-                                            value={formData.sku}
-                                            onChange={(event) => setData('sku', event.target.value)}
-                                            className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
-                                        />
-                                        {errors?.sku && <span className="text-xs text-red-600">{errors.sku}</span>}
-                                    </label>
+                <CreateProductModal
+                    open={isCreateOpen}
+                    onClose={closeCreateModal}
+                    catalogs={options.catalogs}
+                    categories={options.categories}
+                    manufacturers={options.manufacturers}
+                />
 
-                                    <label className="flex flex-col gap-1 text-sm text-gray-700">
-                                        <span>Katalog</span>
-                                        <select
-                                            value={formData.catalog_id ?? ''}
-                                            onChange={(event) => setData('catalog_id', event.target.value)}
-                                            className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
-                                        >
-                                            <option value="">Wybierz katalog</option>
-                                            {options.catalogs.map((catalog) => (
-                                                <option key={catalog.id} value={catalog.id}>
-                                                    {catalog.name}
-                                                </option>
-                                            ))}
-                                        </select>
-                                        {errors?.catalog_id && <span className="text-xs text-red-600">{errors.catalog_id}</span>}
-                                    </label>
-
-                                    <label className="flex flex-col gap-1 text-sm text-gray-700">
-                                        <span>Kategoria</span>
-                                        <select
-                                            value={formData.category_id ?? ''}
-                                            onChange={(event) => setData('category_id', event.target.value)}
-                                            className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
-                                        >
-                                            <option value="">Wybierz kategorię</option>
-                                            {formCategories.map((category) => (
-                                                <option key={category.id} value={category.id}>
-                                                    {category.name}
-                                                </option>
-                                            ))}
-                                        </select>
-                                        {errors?.category_id && <span className="text-xs text-red-600">{errors.category_id}</span>}
-                                    </label>
-
-                                    <label className="flex flex-col gap-1 text-sm text-gray-700">
-                                        <span>Producent</span>
-                                        <select
-                                            value={formData.manufacturer_id ?? ''}
-                                            onChange={(event) => setData('manufacturer_id', event.target.value)}
-                                            className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
-                                        >
-                                            <option value="">Wybierz producenta</option>
-                                            {options.manufacturers?.map((manufacturer) => (
-                                                <option key={manufacturer.id} value={manufacturer.id}>
-                                                    {manufacturer.name}
-                                                </option>
-                                            ))}
-                                        </select>
-                                        {errors?.manufacturer_id && (
-                                            <span className="text-xs text-red-600">{errors.manufacturer_id}</span>
-                                        )}
-                                    </label>
-
-                                    <label className="flex flex-col gap-1 text-sm text-gray-700">
-                                        <span>Cena netto</span>
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            step="0.01"
-                                            value={formData.sale_price_net ?? ''}
-                                            onChange={(event) => setData('sale_price_net', event.target.value)}
-                                            className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
-                                        />
-                                        {errors?.sale_price_net && <span className="text-xs text-red-600">{errors.sale_price_net}</span>}
-                                    </label>
-
-                                    <label className="flex flex-col gap-1 text-sm text-gray-700">
-                                        <span>VAT (%)</span>
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            step="1"
-                                            value={formData.sale_vat_rate ?? ''}
-                                            onChange={(event) => setData('sale_vat_rate', event.target.value)}
-                                            className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
-                                        />
-                                        {errors?.sale_vat_rate && (
-                                            <span className="text-xs text-red-600">{errors.sale_vat_rate}</span>
-                                        )}
-                                    </label>
-
-                                    <label className="flex flex-col gap-1 text-sm text-gray-700">
-                                        <span>Status</span>
-                                        <select
-                                            value={formData.status}
-                                            onChange={(event) => setData('status', event.target.value)}
-                                            className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
-                                        >
-                                            {options.statuses.map((status) => (
-                                                <option key={status.value} value={status.value}>
-                                                    {status.label}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </label>
-                                </div>
-
-                                <label className="flex flex-col gap-1 text-sm text-gray-700">
-                                    <span>Opis</span>
-                                    <textarea
-                                        value={formData.description ?? ''}
-                                        onChange={(event) => setData('description', event.target.value)}
-                                        className="h-24 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
-                                        placeholder="Opcjonalny opis produktu"
-                                    />
-                                </label>
-
-                                <div className="flex items-center justify-end gap-3">
-                                    <Button type="button" variant="ghost" onClick={closeCreateModal}>
-                                        Anuluj
-                                    </Button>
-                                    <Button type="submit" disabled={processing}>
-                                        Zapisz produkt
-                                    </Button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-                )}
+                <EditProductModal
+                    open={isEditOpen}
+                    onClose={closeEditModal}
+                    product={editingProduct}
+                    catalogs={options.catalogs}
+                    categories={options.categories}
+                    manufacturers={options.manufacturers}
+                />
             </div>
         </>
     );
