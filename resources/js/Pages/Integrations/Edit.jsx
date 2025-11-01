@@ -1,6 +1,7 @@
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { useMemo, useState } from 'react';
 import DashboardLayout from '@/Layouts/DashboardLayout.jsx';
+import MappingModal from '@/components/MappingModal.jsx';
 import {
     Card,
     CardHeader,
@@ -224,6 +225,7 @@ function ProfileCreateForm({ integrationId, catalogs }) {
 
     profileForm.transform((data) => ({
         ...data,
+        source_location: data.source_type === 'url' ? data.source_url : data.source_file,
         has_header: data.has_header ? 1 : 0,
         is_active: data.is_active ? 1 : 0,
     }));
@@ -449,6 +451,7 @@ const NONE_OPTION = '__none__';
 
 function ProfileCard({ integrationId, profile, catalogs, mappingMeta }) {
     const [busyAction, setBusyAction] = useState(null);
+    const [showMappingModal, setShowMappingModal] = useState(false);
 
     const updateForm = useForm({
         name: profile.name ?? '',
@@ -470,43 +473,25 @@ function ProfileCard({ integrationId, profile, catalogs, mappingMeta }) {
         },
     });
 
-    updateForm.transform((data) => ({
-        ...data,
-        has_header: data.has_header ? 1 : 0,
-        is_active: data.is_active ? 1 : 0,
-    }));
 
-    const mappingForm = useForm({
-        product: mappingMeta.product_fields
-            ? Object.fromEntries(
-                  Object.keys(mappingMeta.product_fields).map((key) => [
-                      key,
-                      profile.mappings?.product?.[key] ?? '',
-                  ]),
-              )
-            : {},
-        category: mappingMeta.category_fields
-            ? Object.fromEntries(
-                  Object.keys(mappingMeta.category_fields).map((key) => [
-                      key,
-                      profile.mappings?.category?.[key] ?? '',
-                  ]),
-              )
-            : {},
-    });
 
     const submitUpdate = (event) => {
         event.preventDefault();
-        updateForm.post(`/integrations/${integrationId}/import-profiles/${profile.id}`, {
-            method: 'put',
+        updateForm.transform((data) => ({
+            ...data,
+            _method: 'PUT',
+            source_location: data.source_type === 'url' ? data.source_url : data.source_file,
+            has_header: data.has_header ? 1 : 0,
+            is_active: data.is_active ? 1 : 0,
+        })).post(`/integrations/${integrationId}/import-profiles/${profile.id}`, {
             forceFormData: true,
             preserveScroll: true,
         });
     };
 
-    const submitMapping = (event) => {
-        event.preventDefault();
-        mappingForm.post(`/integrations/${integrationId}/import-profiles/${profile.id}/mappings`, {
+    const handleMappingSaved = () => {
+        // Refresh page to show updated mappings
+        router.visit(window.location.pathname, {
             preserveScroll: true,
         });
     };
@@ -735,88 +720,37 @@ function ProfileCard({ integrationId, profile, catalogs, mappingMeta }) {
                 </form>
 
                 <div className="space-y-4">
-                    <div className="flex items-center gap-2">
-                        <MapPin className="size-4 text-primary" />
-                        <h3 className="text-sm font-semibold text-foreground">Mapowanie pól</h3>
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <MapPin className="size-4 text-primary" />
+                            <h3 className="text-sm font-semibold text-foreground">Mapowanie pól</h3>
+                        </div>
+                        <Button 
+                            onClick={() => setShowMappingModal(true)}
+                            variant="outline"
+                            size="sm"
+                            className="gap-2"
+                        >
+                            <MapPin className="size-4" />
+                            {!profile.last_headers || profile.last_headers.length === 0 ? 
+                                'Skonfiguruj mapowanie' : 
+                                `Edytuj mapowanie (${Object.values(profile.mappings?.product || {}).filter(v => v).length + Object.values(profile.mappings?.category || {}).filter(v => v).length} pól)`
+                            }
+                        </Button>
                     </div>
-                    {profile.last_headers?.length === 0 ? (
+                    
+                    {!profile.last_headers || profile.last_headers.length === 0 ? (
                         <Alert>
                             <AlertTitle>Brak nagłówków</AlertTitle>
                             <AlertDescription>
-                                Odśwież nagłówki, aby przypisać kolumny pliku do pól produktów i kategorii.
+                                Najpierw odśwież nagłówki, aby móc skonfigurować mapowanie pól.
                             </AlertDescription>
                         </Alert>
                     ) : (
-                        <form onSubmit={submitMapping} className="grid gap-4 md:grid-cols-2">
-                            <div className="space-y-3">
-                                <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                                    Produkty
-                                </h4>
-                                {Object.entries(mappingMeta.product_fields).map(([target, label]) => (
-                                    <div key={`product-${target}`} className="space-y-2">
-                                        <label className="text-sm font-medium text-foreground">{label}</label>
-                                        <Select
-                                            value={mappingForm.data.product?.[target] || NONE_OPTION}
-                                            onValueChange={(value) =>
-                                                mappingForm.setData('product', {
-                                                    ...mappingForm.data.product,
-                                                    [target]: value === NONE_OPTION ? '' : value,
-                                                })
-                                            }
-                                        >
-                                            <SelectTrigger>
-                                                <SelectValue placeholder="— Pomiń —" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value={NONE_OPTION}>— Pomiń —</SelectItem>
-                                                {profile.last_headers.map((header) => (
-                                                    <SelectItem key={header} value={header}>
-                                                        {header}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-                                ))}
-                            </div>
-                            <div className="space-y-3">
-                                <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                                    Kategorie
-                                </h4>
-                                {Object.entries(mappingMeta.category_fields).map(([target, label]) => (
-                                    <div key={`category-${target}`} className="space-y-2">
-                                        <label className="text-sm font-medium text-foreground">{label}</label>
-                                        <Select
-                                            value={mappingForm.data.category?.[target] || NONE_OPTION}
-                                            onValueChange={(value) =>
-                                                mappingForm.setData('category', {
-                                                    ...mappingForm.data.category,
-                                                    [target]: value === NONE_OPTION ? '' : value,
-                                                })
-                                            }
-                                        >
-                                            <SelectTrigger>
-                                                <SelectValue placeholder="— Pomiń —" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value={NONE_OPTION}>— Pomiń —</SelectItem>
-                                                {profile.last_headers.map((header) => (
-                                                    <SelectItem key={header} value={header}>
-                                                        {header}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-                                ))}
-                            </div>
-                            <div className="md:col-span-2 flex items-center justify-end">
-                                <Button type="submit" disabled={mappingForm.processing}>
-                                    <MapPin className="mr-2 size-4" />
-                                    Zapisz mapowanie
-                                </Button>
-                            </div>
-                        </form>
+                        <div className="text-sm text-muted-foreground">
+                            Dostępnych kolumn: {profile.last_headers.length} | 
+                            Zmapowanych pól: {Object.values(profile.mappings?.product || {}).filter(v => v).length + Object.values(profile.mappings?.category || {}).filter(v => v).length}
+                        </div>
                     )}
                 </div>
 
@@ -879,6 +813,15 @@ function ProfileCard({ integrationId, profile, catalogs, mappingMeta }) {
                     </div>
                 </div>
             </CardContent>
+            
+            <MappingModal
+                isOpen={showMappingModal}
+                onClose={() => setShowMappingModal(false)}
+                profile={profile}
+                integrationId={integrationId}
+                mappingMeta={mappingMeta}
+                onSaved={handleMappingSaved}
+            />
         </Card>
     );
 }

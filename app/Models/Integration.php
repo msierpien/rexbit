@@ -4,7 +4,7 @@ namespace App\Models;
 
 use App\Enums\IntegrationStatus;
 use App\Enums\IntegrationType;
-use App\Models\IntegrationImportProfile;
+use App\Models\IntegrationTask;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -46,8 +46,14 @@ class Integration extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function tasks(): HasMany
+    {
+        return $this->hasMany(IntegrationTask::class);
+    }
+
+    // Backward compatibility alias
     public function importProfiles(): HasMany
     {
-        return $this->hasMany(IntegrationImportProfile::class);
+        return $this->tasks()->where('task_type', 'import');
     }
 }

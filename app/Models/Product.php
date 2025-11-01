@@ -18,8 +18,10 @@ class Product extends Model
         'manufacturer_id',
         'slug',
         'sku',
+        'ean',
         'name',
         'description',
+        'images',
         'purchase_price_net',
         'purchase_vat_rate',
         'sale_price_net',
@@ -30,6 +32,7 @@ class Product extends Model
 
     protected $casts = [
         'attributes' => 'array',
+        'images' => 'array',
         'status' => ProductStatus::class,
         'purchase_price_net' => 'decimal:2',
         'sale_price_net' => 'decimal:2',

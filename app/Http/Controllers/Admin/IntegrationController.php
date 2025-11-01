@@ -114,8 +114,8 @@ class IntegrationController extends Controller
     {
         $integration->load([
             'user.productCatalogs' => fn ($query) => $query->orderBy('name'),
-            'importProfiles.mappings',
-            'importProfiles.runs' => fn ($query) => $query->latest()->take(5),
+            'tasks',
+            'tasks.runs' => fn ($query) => $query->latest()->take(5),
         ]);
 
         $catalogs = $integration->user
@@ -125,42 +125,37 @@ class IntegrationController extends Controller
             : collect();
 
         $profiles = $integration->type === IntegrationType::CSV_XML_IMPORT
-            ? $integration->importProfiles->map(fn ($profile) => [
-                'id' => $profile->id,
-                'name' => $profile->name,
-                'format' => $profile->format,
-                'source_type' => $profile->source_type,
-                'source_location' => $profile->source_location,
-                'catalog_id' => $profile->catalog_id,
-                'delimiter' => $profile->delimiter,
-                'has_header' => (bool) $profile->has_header,
-                'is_active' => (bool) $profile->is_active,
-                'fetch_mode' => $profile->fetch_mode,
-                'fetch_interval_minutes' => $profile->fetch_interval_minutes,
-                'fetch_daily_at' => optional($profile->fetch_daily_at)->format('H:i'),
-                'fetch_cron_expression' => $profile->fetch_cron_expression,
-                'options' => $profile->options ?? [],
-                'last_headers' => $profile->last_headers ?? [],
-                'next_run_at' => optional($profile->next_run_at)->toDateTimeString(),
-                'next_run_human' => optional($profile->next_run_at)?->diffForHumans(),
-                'runs' => $profile->runs->map(fn ($run) => [
+            ? $integration->tasks->map(fn ($task) => [
+                'id' => $task->id,
+                'name' => $task->name,
+                'task_type' => $task->task_type ?? 'import',
+                'resource_type' => $task->resource_type ?? 'products',
+                'format' => $task->format,
+                'source_type' => $task->source_type,
+                'source_location' => $task->source_location,
+                'catalog_id' => $task->catalog_id,
+                'delimiter' => $task->delimiter,
+                'has_header' => (bool) $task->has_header,
+                'is_active' => (bool) $task->is_active,
+                'fetch_mode' => $task->fetch_mode,
+                'fetch_interval_minutes' => $task->fetch_interval_minutes,
+                'fetch_daily_at' => optional($task->fetch_daily_at)->format('H:i'),
+                'fetch_cron_expression' => $task->fetch_cron_expression,
+                'options' => $task->options ?? [],
+                'last_headers' => $task->last_headers ?? [],
+                'next_run_at' => optional($task->next_run_at)->toDateTimeString(),
+                'next_run_human' => optional($task->next_run_at)?->diffForHumans(),
+                'runs' => $task->runs->map(fn ($run) => [
                     'id' => $run->id,
                     'status' => $run->status,
                     'status_variant' => $this->statusVariant($run->status),
                     'created_at' => $run->created_at?->toDateTimeString(),
                     'created_at_human' => $run->created_at?->diffForHumans(),
-                    'success_count' => $run->success_count,
-                    'processed_count' => $run->processed_count,
-                    'message' => $run->message,
+                    'records_imported' => $run->records_imported ?? 0,
+                    'records_processed' => $run->records_processed ?? 0,
+                    'error_message' => $run->error_message,
                 ]),
-                'mappings' => [
-                    'product' => $profile->mappings
-                        ->where('target_type', 'product')
-                        ->pluck('source_field', 'target_field'),
-                    'category' => $profile->mappings
-                        ->where('target_type', 'category')
-                        ->pluck('source_field', 'target_field'),
-                ],
+                'mappings' => $this->transformMappingsForFrontend($task->mappings ?? []),
             ])->values()
             : collect();
 
@@ -348,8 +343,10 @@ class IntegrationController extends Controller
     {
         return [
             'sku' => 'SKU',
+            'ean' => 'EAN (kod kreskowy)',
             'name' => 'Nazwa produktu',
             'description' => 'Opis',
+            'images' => 'Zdjęcia (URLs oddzielone przecinkami)',
             'sale_price_net' => 'Cena sprzedaży netto',
             'sale_vat_rate' => 'VAT sprzedaży (%)',
             'purchase_price_net' => 'Cena zakupu netto',
@@ -367,5 +364,28 @@ class IntegrationController extends Controller
             'parent_slug' => 'Slug kategorii nadrzędnej',
             'parent_name' => 'Nazwa kategorii nadrzędnej',
         ];
+    }
+
+    /**
+     * Transform mappings array to frontend format
+     */
+    protected function transformMappingsForFrontend(array $mappings): array
+    {
+        $result = [
+            'product' => [],
+            'category' => [],
+        ];
+
+        foreach ($mappings as $mapping) {
+            $targetType = $mapping['target_type'] ?? 'product';
+            $targetField = $mapping['target_field'] ?? '';
+            $sourceField = $mapping['source_field'] ?? '';
+
+            if (isset($result[$targetType])) {
+                $result[$targetType][$targetField] = $sourceField;
+            }
+        }
+
+        return $result;
     }
 }

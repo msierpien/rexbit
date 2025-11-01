@@ -84,6 +84,12 @@ return new class extends Migration
                 }
             });
 
+            // Drop existing constraints if they exist
+            DB::statement('ALTER TABLE products DROP CONSTRAINT IF EXISTS products_catalog_id_foreign');
+            DB::statement('ALTER TABLE products DROP CONSTRAINT IF EXISTS products_manufacturer_id_foreign');
+            DB::statement('ALTER TABLE products DROP CONSTRAINT IF EXISTS products_user_catalog_slug_unique');
+            DB::statement('DROP INDEX IF EXISTS products_user_catalog_sku_index');
+
             Schema::table('products', function (Blueprint $table): void {
                 if (Schema::hasColumn('products', 'catalog_id')) {
                     $table->foreign('catalog_id')->references('id')->on('product_catalogs')->cascadeOnDelete();
@@ -101,6 +107,10 @@ return new class extends Migration
         }
 
         if (Schema::hasTable('product_categories')) {
+            // Drop existing constraints if they exist
+            DB::statement('ALTER TABLE product_categories DROP CONSTRAINT IF EXISTS product_categories_catalog_id_foreign');
+            DB::statement('ALTER TABLE product_categories DROP CONSTRAINT IF EXISTS product_categories_user_catalog_slug_unique');
+            
             Schema::table('product_categories', function (Blueprint $table): void {
                 if (Schema::hasColumn('product_categories', 'catalog_id')) {
                     $table->foreign('catalog_id')->references('id')->on('product_catalogs')->cascadeOnDelete();

@@ -6,6 +6,7 @@ use App\Http\Controllers\AdminDashboardController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ContractorController;
 use App\Http\Controllers\IntegrationImportProfileController;
+use App\Http\Controllers\IntegrationTaskController;
 use App\Http\Controllers\ManufacturerController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ProductCatalogController;
@@ -42,17 +43,32 @@ Route::middleware(['auth', 'role:user,admin'])->group(function (): void {
     Route::post('/integrations/{integration}/test', [IntegrationController::class, 'test'])
         ->name('integrations.test');
 
-    Route::post('/integrations/{integration}/import-profiles', [IntegrationImportProfileController::class, 'store'])
+    // New simplified task routes
+    Route::post('/integrations/{integration}/tasks', [IntegrationTaskController::class, 'store'])
+        ->name('integrations.tasks.store');
+    Route::put('/integrations/{integration}/tasks/{task}', [IntegrationTaskController::class, 'update'])
+        ->name('integrations.tasks.update');
+    Route::delete('/integrations/{integration}/tasks/{task}', [IntegrationTaskController::class, 'destroy'])
+        ->name('integrations.tasks.destroy');
+    Route::post('/integrations/{integration}/tasks/{task}/refresh', [IntegrationTaskController::class, 'refreshHeaders'])
+        ->name('integrations.tasks.refresh');
+    Route::post('/integrations/{integration}/tasks/{task}/run', [IntegrationTaskController::class, 'run'])
+        ->name('integrations.tasks.run');
+    Route::post('/integrations/{integration}/tasks/{task}/mappings', [IntegrationTaskController::class, 'saveMappings'])
+        ->name('integrations.tasks.mappings');
+
+    // Backward compatibility (old routes redirect to new ones)
+    Route::post('/integrations/{integration}/import-profiles', [IntegrationTaskController::class, 'store'])
         ->name('integrations.import-profiles.store');
-    Route::put('/integrations/{integration}/import-profiles/{profile}', [IntegrationImportProfileController::class, 'update'])
+    Route::put('/integrations/{integration}/import-profiles/{task}', [IntegrationTaskController::class, 'update'])
         ->name('integrations.import-profiles.update');
-    Route::delete('/integrations/{integration}/import-profiles/{profile}', [IntegrationImportProfileController::class, 'destroy'])
+    Route::delete('/integrations/{integration}/import-profiles/{task}', [IntegrationTaskController::class, 'destroy'])
         ->name('integrations.import-profiles.destroy');
-    Route::post('/integrations/{integration}/import-profiles/{profile}/refresh-headers', [IntegrationImportProfileController::class, 'refreshHeaders'])
+    Route::post('/integrations/{integration}/import-profiles/{task}/refresh-headers', [IntegrationTaskController::class, 'refreshHeaders'])
         ->name('integrations.import-profiles.refresh');
-    Route::post('/integrations/{integration}/import-profiles/{profile}/run', [IntegrationImportProfileController::class, 'run'])
+    Route::post('/integrations/{integration}/import-profiles/{task}/run', [IntegrationTaskController::class, 'run'])
         ->name('integrations.import-profiles.run');
-    Route::post('/integrations/{integration}/import-profiles/{profile}/mappings', [IntegrationImportProfileController::class, 'mappings'])
+    Route::post('/integrations/{integration}/import-profiles/{task}/mappings', [IntegrationTaskController::class, 'saveMappings'])
         ->name('integrations.import-profiles.mappings');
 
     Route::resource('/products', ProductController::class)

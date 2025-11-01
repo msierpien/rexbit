@@ -3,12 +3,13 @@
 namespace App\Services\Integrations\Import;
 
 use App\Models\IntegrationImportProfile;
+use App\Models\IntegrationTask;
 use Carbon\Carbon;
 use Cron\CronExpression;
 
 class ImportSchedulerService
 {
-    public function computeNextRun(IntegrationImportProfile $profile, ?Carbon $from = null): ?Carbon
+    public function computeNextRun(IntegrationImportProfile|IntegrationTask $profile, ?Carbon $from = null): ?Carbon
     {
         $from = $from ?? now();
 
@@ -20,7 +21,7 @@ class ImportSchedulerService
         };
     }
 
-    public function updateNextRun(IntegrationImportProfile $profile): IntegrationImportProfile
+    public function updateNextRun(IntegrationImportProfile|IntegrationTask $profile): IntegrationImportProfile|IntegrationTask
     {
         $profile->next_run_at = $profile->is_active ? $this->computeNextRun($profile) : null;
         $profile->save();
@@ -28,7 +29,7 @@ class ImportSchedulerService
         return $profile;
     }
 
-    protected function intervalNextRun(IntegrationImportProfile $profile, Carbon $from): ?Carbon
+    protected function intervalNextRun(IntegrationImportProfile|IntegrationTask $profile, Carbon $from): ?Carbon
     {
         $minutes = $profile->fetch_interval_minutes;
 
@@ -39,7 +40,7 @@ class ImportSchedulerService
         return $from->copy()->addMinutes($minutes);
     }
 
-    protected function dailyNextRun(IntegrationImportProfile $profile, Carbon $from): ?Carbon
+    protected function dailyNextRun(IntegrationImportProfile|IntegrationTask $profile, Carbon $from): ?Carbon
     {
         if (! $profile->fetch_daily_at) {
             return null;
@@ -55,7 +56,7 @@ class ImportSchedulerService
         return $next;
     }
 
-    protected function cronNextRun(IntegrationImportProfile $profile, Carbon $from): ?Carbon
+    protected function cronNextRun(IntegrationImportProfile|IntegrationTask $profile, Carbon $from): ?Carbon
     {
         if (! $profile->fetch_cron_expression) {
             return null;

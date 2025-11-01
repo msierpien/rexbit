@@ -3,13 +3,12 @@
 namespace App\Jobs;
 
 use App\Enums\ProductStatus;
-use App\Models\IntegrationImportProfile;
-use App\Models\IntegrationImportRun;
+use App\Models\IntegrationTaskRun;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Notifications\IntegrationImportFinished;
-use App\Services\Integrations\Import\ImportRunService;
 use App\Services\Integrations\Import\ImportSchedulerService;
+use App\Services\Integrations\Tasks\TaskRunService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -25,23 +24,23 @@ class ProcessIntegrationImportChunk implements ShouldQueue
 
     public function __construct(
         public int $runId,
-        public int $profileId,
         public array $rows,
         public array $productMappings,
-        public array $categoryMappings
+        public array $categoryMappings,
+        public ?int $catalogId = null
     ) {
     }
 
-    public function handle(ImportRunService $runService, ImportSchedulerService $scheduler): void
+    public function handle(TaskRunService $runService, ImportSchedulerService $scheduler): void
     {
-        $profile = IntegrationImportProfile::with(['integration.user'])->find($this->profileId);
+        $run = IntegrationTaskRun::with(['task.integration.user'])->find($this->runId);
 
-        if (! $profile || ! $profile->integration || ! $profile->integration->user) {
+        if (! $run || ! $run->task || ! $run->task->integration || ! $run->task->integration->user) {
             return;
         }
 
-        $user = $profile->integration->user;
-        $catalogId = $profile->catalog_id ?? $this->ensureCatalog($user)->id;
+        $user = $run->task->integration->user;
+        $catalogId = $this->catalogId ?? $this->ensureCatalog($user)->id;
 
         $processed = 0;
         $success = 0;
@@ -82,7 +81,7 @@ class ProcessIntegrationImportChunk implements ShouldQueue
         }
 
         $run = $runService->applyChunkResult(
-            $this->runId,
+            $run,
             $processed,
             $success,
             $failure,
@@ -98,9 +97,9 @@ class ProcessIntegrationImportChunk implements ShouldQueue
 
                 $run->forceFill(['message' => $run->message ?? $message])->save();
 
-                $profile->forceFill(['last_fetched_at' => now()])->save();
+                $run->task->forceFill(['last_fetched_at' => now()])->save();
 
-                $scheduler->updateNextRun($profile);
+                $scheduler->updateNextRun($run->task);
 
                 $user->notify(new IntegrationImportFinished($run));
             } elseif ($run->status === 'failed') {
@@ -111,17 +110,15 @@ class ProcessIntegrationImportChunk implements ShouldQueue
 
     public function failed(Throwable $exception): void
     {
-        $runService = app(ImportRunService::class);
-        $run = IntegrationImportRun::find($this->runId);
+        $runService = app(TaskRunService::class);
+        $run = IntegrationTaskRun::with(['task.integration.user'])->find($this->runId);
 
         if ($run) {
-            $run = $runService->fail($run, $exception->getMessage());
-        }
-
-        $profile = IntegrationImportProfile::with('integration.user')->find($this->profileId);
-
-        if ($profile && $profile->integration && $profile->integration->user) {
-            $profile->integration->user->notify(new IntegrationImportFinished($run, false, $exception->getMessage()));
+            $runService->fail($run, $exception->getMessage());
+            
+            if ($run->task && $run->task->integration && $run->task->integration->user) {
+                $run->task->integration->user->notify(new IntegrationImportFinished($run, false, $exception->getMessage()));
+            }
         }
     }
 

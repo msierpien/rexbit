@@ -19,6 +19,9 @@ return new class extends Migration
             }
         });
 
+        // Drop existing constraint if it exists
+        DB::statement('ALTER TABLE warehouse_documents DROP CONSTRAINT IF EXISTS warehouse_documents_contractor_id_foreign');
+
         Schema::table('warehouse_documents', function (Blueprint $table): void {
             if (Schema::hasColumn('warehouse_documents', 'contractor_id')) {
                 $table->foreign('contractor_id')->references('id')->on('contractors')->nullOnDelete();

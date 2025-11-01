@@ -3,6 +3,7 @@
 namespace App\Services\Integrations\Import;
 
 use App\Models\IntegrationImportProfile;
+use App\Models\IntegrationTask;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 
@@ -13,7 +14,7 @@ class ImportSourceResolver
      *
      * @return array{path: string, temporary: bool}
      */
-    public function resolve(IntegrationImportProfile $profile): array
+    public function resolve(IntegrationImportProfile|IntegrationTask $profile): array
     {
         return match ($profile->source_type) {
             'file' => $this->resolveFilePath($profile),
@@ -22,7 +23,7 @@ class ImportSourceResolver
         };
     }
 
-    protected function resolveFilePath(IntegrationImportProfile $profile): array
+    protected function resolveFilePath(IntegrationImportProfile|IntegrationTask $profile): array
     {
         $disk = Storage::disk('local');
         $path = $profile->source_location;
@@ -37,7 +38,7 @@ class ImportSourceResolver
         ];
     }
 
-    protected function downloadRemoteSource(IntegrationImportProfile $profile): array
+    protected function downloadRemoteSource(IntegrationImportProfile|IntegrationTask $profile): array
     {
         $response = Http::timeout(20)
             ->withHeaders([
