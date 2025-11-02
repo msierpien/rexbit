@@ -275,7 +275,7 @@ class WarehouseDocument extends Model
             'from_status' => $oldStatus->value,
             'to_status' => $newStatus->value,
             'affects_stock' => $newStatus->affectsStock(),
-            'can_edit_after' => $newStatus->canEdit(),
+            'can_edit_after' => $newStatus->allowsEditing(),
             'user_id' => $user->id,
             'user_name' => $user->name,
         ]);

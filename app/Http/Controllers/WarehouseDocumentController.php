@@ -20,29 +20,59 @@ class WarehouseDocumentController extends Controller
 
     public function index(Request $request): Response
     {
-        $documents = $request->user()
+        $paginator = $request->user()
             ->warehouseDocuments()
+            ->select(['warehouse_documents.*'])
             ->with(['warehouse', 'contractor'])
+            ->withSum('items as total_quantity', 'quantity')
+            ->selectSub(
+                'SELECT COALESCE(SUM(quantity * unit_price), 0) FROM warehouse_document_items WHERE warehouse_document_items.warehouse_document_id = warehouse_documents.id',
+                'total_net_value'
+            )
+            ->when($request->string('status')->isNotEmpty(), function ($query) use ($request) {
+                $query->where('status', $request->string('status'));
+            })
             ->latest('issued_at')
-            ->paginate(15)
-            ->through(fn (WarehouseDocument $document) => [
-                'id' => $document->id,
-                'number' => $document->number,
-                'type' => $document->type,
-                'warehouse' => $document->warehouse?->only(['id', 'name']),
-                'contractor' => $document->contractor?->only(['id', 'name']),
-                'issued_at' => $document->issued_at?->format('Y-m-d'),
-                'status' => $document->status->value,
-                'status_label' => $document->status->label(),
-                'status_badge_class' => $document->status->badgeClass(),
-                'can_be_edited' => $document->canBeEdited(),
-                'can_be_deleted' => $document->canBeDeleted(),
-                'deletion_block_reason' => $document->getDeletionBlockReason(),
-                'available_transitions' => $document->getAvailableTransitions(),
-            ]);
+            ->paginate(15);
+
+        $totals = [
+            'total_documents' => $paginator->total(),
+            'total_quantity' => $paginator->getCollection()->sum(fn ($document) => (float) $document->total_quantity),
+            'total_net_value' => $paginator->getCollection()->sum(fn ($document) => (float) $document->total_net_value),
+        ];
+
+        $documents = $paginator->through(fn (WarehouseDocument $document) => [
+            'id' => $document->id,
+            'number' => $document->number,
+            'type' => $document->type,
+            'warehouse' => $document->warehouse?->only(['id', 'name']),
+            'contractor' => $document->contractor?->only(['id', 'name']),
+            'issued_at' => $document->issued_at?->format('Y-m-d'),
+            'status' => $document->status->value,
+            'status_label' => $document->status->label(),
+            'status_badge_class' => $document->status->badgeClass(),
+            'can_be_edited' => $document->canBeEdited(),
+            'can_be_deleted' => $document->canBeDeleted(),
+            'deletion_block_reason' => $document->getDeletionBlockReason(),
+            'available_transitions' => $document->getAvailableTransitions(),
+            'total_quantity' => (float) $document->total_quantity,
+            'total_net_value' => (float) $document->total_net_value,
+            'created_at' => $document->created_at?->format('Y-m-d H:i'),
+            'metadata' => $document->metadata ?? [],
+        ]);
+
+        $statusOptions = collect(WarehouseDocumentStatus::cases())->map(fn ($status) => [
+            'value' => $status->value,
+            'label' => $status->label(),
+        ])->values();
 
         return Inertia::render('Warehouse/Documents/Index', [
             'documents' => $documents,
+            'filters' => [
+                'status' => $request->string('status')->toString(),
+            ],
+            'statusOptions' => $statusOptions,
+            'totals' => $totals,
         ]);
     }
 
@@ -108,10 +138,15 @@ class WarehouseDocumentController extends Controller
                 'id' => $warehouse_document->id,
                 'number' => $warehouse_document->number,
                 'type' => $warehouse_document->type,
-                'status' => $warehouse_document->status,
+                'status' => $warehouse_document->status->value,
+                'status_label' => $warehouse_document->status->label(),
+                'available_transitions' => $warehouse_document->getAvailableTransitions(),
+                'can_be_deleted' => $warehouse_document->canBeDeleted(),
+                'deletion_block_reason' => $warehouse_document->getDeletionBlockReason(),
                 'warehouse_location_id' => $warehouse_document->warehouse_location_id,
                 'contractor_id' => $warehouse_document->contractor_id,
                 'issued_at' => $warehouse_document->issued_at?->format('Y-m-d'),
+                'metadata' => $warehouse_document->metadata ?? [],
                 'items' => $warehouse_document->items->map(fn ($item) => [
                     'id' => $item->id,
                     'product_id' => $item->product_id,
@@ -150,6 +185,60 @@ class WarehouseDocumentController extends Controller
         $this->service->update($warehouse_document, $request->all());
 
         return redirect()->route('warehouse.documents.edit', $warehouse_document)->with('status', 'Dokument został zaktualizowany.');
+    }
+
+    public function show(WarehouseDocument $warehouse_document, Request $request): Response
+    {
+        $warehouse_document->load([
+            'warehouse',
+            'contractor',
+            'items.product',
+            'user',
+        ]);
+
+        $this->authorize('view', $warehouse_document);
+
+        $itemTotals = $warehouse_document->items->map(fn ($item) => [
+            'id' => $item->id,
+            'product' => [
+                'id' => $item->product?->id,
+                'name' => $item->product?->name,
+                'sku' => $item->product?->sku,
+            ],
+            'quantity' => (float) $item->quantity,
+            'unit_price' => (float) $item->unit_price,
+            'net_value' => (float) $item->quantity * (float) $item->unit_price,
+            'vat_rate' => $item->vat_rate,
+        ])->values();
+
+        $summary = [
+            'total_items' => $itemTotals->count(),
+            'total_quantity' => $itemTotals->sum('quantity'),
+            'total_net_value' => $itemTotals->sum('net_value'),
+        ];
+
+        return Inertia::render('Warehouse/Documents/Show', [
+            'document' => [
+                'id' => $warehouse_document->id,
+                'number' => $warehouse_document->number,
+                'type' => $warehouse_document->type,
+                'status' => $warehouse_document->status->value,
+                'status_label' => $warehouse_document->status->label(),
+                'issued_at' => $warehouse_document->issued_at?->format('Y-m-d'),
+                'created_at' => $warehouse_document->created_at?->format('Y-m-d H:i'),
+                'updated_at' => $warehouse_document->updated_at?->format('Y-m-d H:i'),
+                'warehouse' => $warehouse_document->warehouse?->only(['id', 'name']),
+                'contractor' => $warehouse_document->contractor?->only(['id', 'name']),
+                'user' => $warehouse_document->user?->only(['id', 'name', 'email']),
+                'items' => $itemTotals,
+                'summary' => $summary,
+                'available_transitions' => $warehouse_document->getAvailableTransitions(),
+                'can_be_edited' => $warehouse_document->canBeEdited(),
+                'can_be_deleted' => $warehouse_document->canBeDeleted(),
+                'deletion_block_reason' => $warehouse_document->getDeletionBlockReason(),
+                'metadata' => $warehouse_document->metadata ?? [],
+            ],
+        ]);
     }
 
     public function destroy(Request $request, WarehouseDocument $warehouse_document): RedirectResponse
@@ -199,15 +288,66 @@ class WarehouseDocumentController extends Controller
     }
 
     /**
-     * Archive a warehouse document
+     * Bulk status update for selected documents
      */
-    public function archive(Request $request, WarehouseDocument $warehouse_document): RedirectResponse
+    public function bulkStatus(Request $request): RedirectResponse
     {
-        try {
-            $this->service->archive($warehouse_document, $request->user());
-            return redirect()->back()->with('status', 'Dokument został zarchiwizowany.');
-        } catch (\InvalidArgumentException $e) {
-            return redirect()->back()->with('error', $e->getMessage());
+        $validated = $request->validate([
+            'document_ids' => ['required', 'array', 'min:1'],
+            'document_ids.*' => ['integer', 'exists:warehouse_documents,id'],
+            'action' => ['required', 'in:post,cancel,archive'],
+            'reason' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $documents = WarehouseDocument::query()
+            ->where('user_id', $request->user()->id)
+            ->whereIn('id', $validated['document_ids'])
+            ->get();
+
+        if ($documents->isEmpty()) {
+            return redirect()->back()->with('error', 'Nie znaleziono wskazanych dokumentów.');
         }
+
+        $success = 0;
+        $failed = [];
+
+        foreach ($documents as $document) {
+            try {
+                match ($validated['action']) {
+                    'post' => $this->service->post($document, $request->user()),
+                    'cancel' => $this->service->cancel($document, $request->user(), $validated['reason'] ?? null),
+                    'archive' => $this->service->archive($document, $request->user()),
+                };
+
+                $success++;
+            } catch (\Throwable $exception) {
+                $documentLabel = $document->number ?? "#{$document->id}";
+                $failed[$documentLabel] = $exception->getMessage();
+                report($exception);
+            }
+        }
+
+        if ($success > 0) {
+            $message = "Zmieniono status dla {$success} dokumentów.";
+            if (! empty($failed)) {
+                $details = collect($failed)
+                    ->map(fn ($reason, $label) => "{$label}: {$reason}")
+                    ->implode('; ');
+                $message .= ' Pomięto: ' . $details . '.';
+            }
+
+            return redirect()->back()->with('status', $message);
+        }
+
+        $errorDetails = collect($failed)
+            ->map(fn ($reason, $label) => "{$label}: {$reason}")
+            ->implode('; ');
+
+        $errorMessage = 'Nie udało się zmienić statusu wybranych dokumentów.';
+        if ($errorDetails !== '') {
+            $errorMessage .= ' Szczegóły: ' . $errorDetails . '.';
+        }
+
+        return redirect()->back()->with('error', $errorMessage);
     }
 }

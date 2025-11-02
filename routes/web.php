@@ -80,6 +80,8 @@ Route::middleware(['auth', 'role:user,admin'])->group(function (): void {
     Route::resource('/products', ProductController::class)
         ->names('products')
         ->except(['show']);
+    Route::get('/products/{product}/stock-history', [ProductController::class, 'stockHistory'])
+        ->name('products.stock-history');
     Route::get('/notifications', NotificationController::class)->name('notifications.index');
     Route::resource('/product-categories', ProductCategoryController::class)
         ->names('product-categories')
@@ -95,8 +97,9 @@ Route::middleware(['auth', 'role:user,admin'])->group(function (): void {
 
     Route::resource('/warehouse/documents', WarehouseDocumentController::class)
         ->parameters(['documents' => 'warehouse_document'])
-        ->names('warehouse.documents')
-        ->except(['show']);
+        ->names('warehouse.documents');
+    Route::post('/warehouse/documents/bulk-status', [WarehouseDocumentController::class, 'bulkStatus'])
+        ->name('warehouse.documents.bulk-status');
     
     // Status management routes for warehouse documents
     Route::post('/warehouse/documents/{warehouse_document}/post', [WarehouseDocumentController::class, 'post'])

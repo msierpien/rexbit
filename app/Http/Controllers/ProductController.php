@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\ProductStatus;
 use App\Models\Product;
+use App\Models\WarehouseDocumentItem;
 use App\Services\Catalog\ProductService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -30,7 +31,12 @@ class ProductController extends Controller
             'per_page' => (int) $request->integer('per_page', 15),
         ];
 
-        $query = $request->user()->products()->with(['category.catalog', 'catalog', 'manufacturer']);
+        $query = $request->user()->products()->with([
+            'category.catalog',
+            'catalog',
+            'manufacturer',
+            'warehouseStocks.warehouse',
+        ]);
 
         if ($filters['search']) {
             $query->where(function ($builder) use ($filters): void {
@@ -84,6 +90,23 @@ class ProductController extends Controller
                 'sale_vat_rate' => $product->sale_vat_rate,
                 'images' => $product->images,
                 'updated_at' => $product->updated_at?->toDateTimeString(),
+                'stock_summary' => [
+                    'total_on_hand' => (float) $product->warehouseStocks->sum('on_hand'),
+                    'total_reserved' => (float) $product->warehouseStocks->sum('reserved'),
+                    'total_incoming' => (float) $product->warehouseStocks->sum('incoming'),
+                    'total_available' => (float) $product->warehouseStocks
+                        ->sum(fn ($stock) => (float) $stock->on_hand - (float) $stock->reserved),
+                ],
+                'stocks' => $product->warehouseStocks
+                    ->map(fn ($stock) => [
+                        'warehouse_id' => $stock->warehouse_location_id,
+                        'warehouse_name' => $stock->warehouse?->name ?? '—',
+                        'on_hand' => (float) $stock->on_hand,
+                        'reserved' => (float) $stock->reserved,
+                        'incoming' => (float) $stock->incoming,
+                        'available' => (float) $stock->on_hand - (float) $stock->reserved,
+                    ])
+                    ->values(),
             ]);
 
         return Inertia::render('Products/Index', [
@@ -199,6 +222,95 @@ class ProductController extends Controller
             ->route('products.index')
             ->with('status', 'Produkt został zaktualizowany.')
             ->setStatusCode(303);
+    }
+
+    public function stockHistory(Product $product, Request $request)
+    {
+        $this->authorize('view', $product);
+
+        $product->loadMissing(['warehouseStocks.warehouse']);
+
+        $limit = (int) $request->integer('limit', 50);
+        $historyLimit = max(10, min(100, $limit));
+
+        $items = WarehouseDocumentItem::query()
+            ->where('product_id', $product->id)
+            ->with([
+                'document' => function ($query) {
+                    $query->withTrashed()->with(['warehouse']);
+                },
+            ])
+            ->orderByDesc('created_at')
+            ->limit($historyLimit)
+            ->get();
+
+        $history = $items
+            ->map(function (WarehouseDocumentItem $item) {
+                $document = $item->document;
+
+                if (! $document) {
+                    return null;
+                }
+
+                $sign = match ($document->type) {
+                    'PZ', 'PW', 'IN' => 1,
+                    'WZ', 'RW', 'OUT' => -1,
+                    default => 0,
+                };
+
+                $quantity = (float) $item->quantity;
+                $change = $sign * $quantity;
+
+                return [
+                    'id' => $item->id,
+                    'document_id' => $document->id,
+                    'document_number' => $document->number,
+                    'document_type' => $document->type,
+                    'document_status' => $document->status?->value,
+                    'document_status_label' => $document->status?->label(),
+                    'issued_at' => $document->issued_at?->format('Y-m-d'),
+                    'warehouse_id' => $document->warehouse_location_id,
+                    'warehouse_name' => $document->warehouse?->name,
+                    'quantity' => $quantity,
+                    'quantity_change' => $change,
+                    'direction' => $change >= 0 ? 'in' : 'out',
+                    'unit_price' => $item->unit_price !== null ? (float) $item->unit_price : null,
+                    'created_at' => $item->created_at?->format('Y-m-d H:i'),
+                ];
+            })
+            ->filter()
+            ->values();
+
+        $stocks = $product->warehouseStocks
+            ->map(fn ($stock) => [
+                'warehouse_id' => $stock->warehouse_location_id,
+                'warehouse_name' => $stock->warehouse?->name ?? '—',
+                'on_hand' => (float) $stock->on_hand,
+                'reserved' => (float) $stock->reserved,
+                'incoming' => (float) $stock->incoming,
+                'available' => (float) $stock->on_hand - (float) $stock->reserved,
+            ])
+            ->values();
+
+        $summary = [
+            'total_on_hand' => (float) $product->warehouseStocks->sum('on_hand'),
+            'total_reserved' => (float) $product->warehouseStocks->sum('reserved'),
+            'total_incoming' => (float) $product->warehouseStocks->sum('incoming'),
+            'total_available' => (float) $product->warehouseStocks
+                ->sum(fn ($stock) => (float) $stock->on_hand - (float) $stock->reserved),
+        ];
+
+        return response()->json([
+            'product' => [
+                'id' => $product->id,
+                'name' => $product->name,
+                'sku' => $product->sku,
+                'ean' => $product->ean,
+            ],
+            'stocks' => $stocks,
+            'history' => $history,
+            'summary' => $summary,
+        ]);
     }
 
     public function destroy(Product $product): RedirectResponse

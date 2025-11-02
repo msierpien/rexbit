@@ -1,125 +1,157 @@
 import { router } from '@inertiajs/react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button.jsx';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu.jsx';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog.jsx';
+import { Textarea } from '@/components/ui/textarea.jsx';
+import { Archive, ArrowRightLeft, CheckCircle2, MoreHorizontal, XCircle } from 'lucide-react';
 
-function CancelModal({ isOpen, onClose, onConfirm }) {
-    const [reason, setReason] = useState('');
-
-    if (!isOpen) return null;
-
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-            <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg">
-                <h3 className="mb-4 text-lg font-semibold text-gray-900">Anulowanie dokumentu</h3>
-                
-                <div className="mb-4">
-                    <label className="mb-2 block text-sm font-medium text-gray-700">
-                        Powód anulowania (opcjonalnie)
-                    </label>
-                    <textarea
-                        value={reason}
-                        onChange={(e) => setReason(e.target.value)}
-                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
-                        rows="3"
-                        placeholder="Podaj powód anulowania dokumentu..."
-                        maxLength="500"
-                    />
-                    <p className="mt-1 text-xs text-gray-500">{reason.length}/500 znaków</p>
-                </div>
-
-                <div className="flex gap-2">
-                    <Button 
-                        variant="destructive" 
-                        onClick={() => onConfirm(reason)}
-                        className="flex-1"
-                    >
-                        Anuluj dokument
-                    </Button>
-                    <Button 
-                        variant="outline" 
-                        onClick={onClose}
-                        className="flex-1"
-                    >
-                        Zamknij
-                    </Button>
-                </div>
-            </div>
-        </div>
-    );
-}
+const actionMeta = {
+    post: {
+        icon: CheckCircle2,
+        confirm: 'Czy na pewno chcesz zatwierdzić ten dokument?',
+        successVariant: 'default',
+    },
+    cancel: {
+        icon: XCircle,
+        confirm: null,
+        successVariant: 'destructive',
+    },
+    archive: {
+        icon: Archive,
+        confirm: 'Czy na pewno chcesz zarchiwizować ten dokument?',
+        successVariant: 'outline',
+    },
+};
 
 export default function DocumentStatusActions({ document }) {
-    const [showCancelModal, setShowCancelModal] = useState(false);
+    const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+    const [cancelReason, setCancelReason] = useState('');
 
-    const handleStatusChange = (action, data = {}) => {
-        const routes = {
-            post: `/warehouse/documents/${document.id}/post`,
-            cancel: `/warehouse/documents/${document.id}/cancel`, 
-            archive: `/warehouse/documents/${document.id}/archive`,
-        };
+    const availableActions = useMemo(
+        () => Object.entries(document.available_transitions || {}),
+        [document.available_transitions]
+    );
 
-        router.post(routes[action], data, {
+    if (!availableActions.length) {
+        return null;
+    }
+
+    const routes = {
+        post: `/warehouse/documents/${document.id}/post`,
+        cancel: `/warehouse/documents/${document.id}/cancel`,
+        archive: `/warehouse/documents/${document.id}/archive`,
+    };
+
+    const executeAction = (action, payload = {}) => {
+        const meta = actionMeta[action];
+        if (meta?.confirm && !window.confirm(meta.confirm)) {
+            return;
+        }
+
+        router.post(routes[action], payload, {
             preserveScroll: true,
         });
     };
 
-    const handleCancel = (reason) => {
-        handleStatusChange('cancel', { reason });
-        setShowCancelModal(false);
+    const handleCancelConfirm = () => {
+        executeAction('cancel', { reason: cancelReason });
+        setCancelDialogOpen(false);
+        setCancelReason('');
     };
 
-    const getActionButton = (action, label) => {
-        const configs = {
-            post: {
-                variant: 'default',
-                onClick: () => {
-                    if (confirm('Czy na pewno chcesz zatwierdzić ten dokument?')) {
-                        handleStatusChange('post');
-                    }
-                }
-            },
-            cancel: {
-                variant: 'destructive',
-                onClick: () => setShowCancelModal(true)
-            },
-            archive: {
-                variant: 'outline',
-                onClick: () => {
-                    if (confirm('Czy na pewno chcesz zarchiwizować ten dokument?')) {
-                        handleStatusChange('archive');
-                    }
-                }
-            }
-        };
-
-        const config = configs[action];
-        if (!config) return null;
-
-        return (
-            <Button
-                key={action}
-                variant={config.variant}
-                size="sm"
-                onClick={config.onClick}
-            >
-                {label}
-            </Button>
-        );
+    const handleActionSelect = (action) => {
+        if (action === 'cancel') {
+            setCancelDialogOpen(true);
+        } else {
+            executeAction(action);
+        }
     };
 
     return (
         <>
-            <div className="flex gap-2">
-                {Object.entries(document.available_transitions || {}).map(([action, label]) => 
-                    getActionButton(action, label)
-                )}
-            </div>
+            <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                    <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="shrink-0"
+                        onClick={(event) => event.stopPropagation()}
+                        title="Zmień status dokumentu"
+                    >
+                        <MoreHorizontal className="size-4" />
+                        <span className="sr-only">Zmień status dokumentu</span>
+                    </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56" onClick={(event) => event.stopPropagation()}>
+                    {availableActions.map(([action, label]) => {
+                        const Icon = actionMeta[action]?.icon ?? ArrowRightLeft;
+                        const variant = action === 'cancel' ? 'destructive' : 'default';
 
-            <CancelModal
-                isOpen={showCancelModal}
-                onClose={() => setShowCancelModal(false)}
-                onConfirm={handleCancel}
-            />
+                        return (
+                            <DropdownMenuItem
+                                key={action}
+                                variant={variant}
+                                onSelect={(event) => {
+                                    event.preventDefault();
+                                    handleActionSelect(action);
+                                }}
+                                className="font-medium"
+                            >
+                                <Icon className="size-4" />
+                                {label}
+                            </DropdownMenuItem>
+                        );
+                    })}
+                </DropdownMenuContent>
+            </DropdownMenu>
+
+            <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
+                <DialogContent className="max-w-lg" onInteractOutside={(event) => event.preventDefault()}>
+                    <DialogHeader>
+                        <DialogTitle>Anulowanie dokumentu</DialogTitle>
+                        <DialogDescription>
+                            Opcjonalnie podaj powód anulowania. Informacja zostanie zapisana w historii dokumentu.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <Textarea
+                        value={cancelReason}
+                        onChange={(event) => setCancelReason(event.target.value)}
+                        placeholder="Powód anulowania (maksymalnie 500 znaków)"
+                        maxLength={500}
+                    />
+                    <p className="text-xs text-muted-foreground">{cancelReason.length}/500 znaków</p>
+
+                    <DialogFooter className="gap-2">
+                        <Button
+                            variant="outline"
+                            type="button"
+                            onClick={() => {
+                                setCancelDialogOpen(false);
+                                setCancelReason('');
+                            }}
+                        >
+                            Zamknij
+                        </Button>
+                        <Button variant="destructive" type="button" onClick={handleCancelConfirm}>
+                            Potwierdź anulowanie
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </>
     );
 }
