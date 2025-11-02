@@ -21,7 +21,16 @@ import {
 } from '@/components/ui/dropdown-menu.jsx';
 import CreateProductModal from '@/components/CreateProductModal.jsx';
 import EditProductModal from '@/components/EditProductModal.jsx';
-import { Loader2, Pencil, Trash2, Settings2, SlidersHorizontal } from 'lucide-react';
+import {
+    ArrowUpDown,
+    ChevronDown,
+    ChevronUp,
+    Loader2,
+    Pencil,
+    Trash2,
+    Settings2,
+    SlidersHorizontal,
+} from 'lucide-react';
 
 const perPageOptions = [10, 15, 30, 50];
 
@@ -34,6 +43,8 @@ const stockFilterOptions = [
 const COLUMN_STORAGE_KEY = 'products:column-visibility';
 
 const defaultColumnVisibility = {
+    id: true,
+    sku: true,
     catalog: true,
     category: true,
     stock: true,
@@ -44,6 +55,8 @@ const defaultColumnVisibility = {
 };
 
 const columnDefinitions = [
+    { key: 'id', label: 'ID produktu' },
+    { key: 'sku', label: 'SKU' },
     { key: 'catalog', label: 'Katalog' },
     { key: 'category', label: 'Kategoria' },
     { key: 'stock', label: 'Stan (razem)' },
@@ -167,6 +180,8 @@ export default function ProductsIndex() {
     const [stockFilter, setStockFilter] = useState(filters.stock ?? '');
     const [priceMin, setPriceMin] = useState(filters.price_min ?? '');
     const [priceMax, setPriceMax] = useState(filters.price_max ?? '');
+    const [sortColumn, setSortColumn] = useState(filters.sort ?? null);
+    const [sortDirection, setSortDirection] = useState(filters.direction ?? 'asc');
     const [selectedIds, setSelectedIds] = useState([]);
     const [deselectedIds, setDeselectedIds] = useState([]);
     const [isAllSelected, setIsAllSelected] = useState(false);
@@ -194,7 +209,9 @@ export default function ProductsIndex() {
         setStockFilter(filters.stock ?? '');
         setPriceMin(filters.price_min ?? '');
         setPriceMax(filters.price_max ?? '');
-    }, [filters.status, filters.stock, filters.price_min, filters.price_max]);
+        setSortColumn(filters.sort ?? null);
+        setSortDirection(filters.direction ?? 'asc');
+    }, [filters.status, filters.stock, filters.price_min, filters.price_max, filters.sort, filters.direction]);
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
@@ -210,6 +227,8 @@ export default function ProductsIndex() {
             stock: stockFilter || undefined,
             price_min: priceMin || undefined,
             price_max: priceMax || undefined,
+            sort: sortColumn || undefined,
+            direction: sortColumn ? sortDirection : undefined,
         };
 
         delete base.view;
@@ -333,6 +352,8 @@ export default function ProductsIndex() {
         setStockFilter('');
         setPriceMin('');
         setPriceMax('');
+        setSortColumn(null);
+        setSortDirection('asc');
 
         updateFilters({
             search: undefined,
@@ -342,6 +363,8 @@ export default function ProductsIndex() {
             price_max: undefined,
             catalog: undefined,
             category: undefined,
+            sort: undefined,
+            direction: undefined,
         });
     };
 
@@ -355,6 +378,40 @@ export default function ProductsIndex() {
 
     const handleCategoryChange = (category) => {
         updateFilters({ category });
+    };
+
+    const renderSortIcon = (column) => {
+        if (sortColumn !== column) {
+            return <ArrowUpDown className="h-3.5 w-3.5 text-gray-400" />;
+        }
+
+        return sortDirection === 'asc' ? (
+            <ChevronUp className="h-3.5 w-3.5 text-blue-600" />
+        ) : (
+            <ChevronDown className="h-3.5 w-3.5 text-blue-600" />
+        );
+    };
+
+    const handleSort = (column) => {
+        let nextSort = column;
+        let nextDirection = 'asc';
+
+        if (sortColumn === column) {
+            if (sortDirection === 'asc') {
+                nextDirection = 'desc';
+            } else {
+                nextSort = null;
+                nextDirection = 'asc';
+            }
+        }
+
+        setSortColumn(nextSort);
+        setSortDirection(nextDirection);
+
+        updateFilters({
+            sort: nextSort || undefined,
+            direction: nextSort ? nextDirection : undefined,
+        });
     };
 
     const handleDeleteProduct = (product) => {
@@ -428,8 +485,17 @@ export default function ProductsIndex() {
     const isColumnVisible = (key) => columnVisibility[key] !== false;
 
     const hasActiveFilters =
-        Boolean(filters.search ?? filters.status ?? filters.stock ?? filters.price_min ?? filters.price_max ?? filters.catalog ?? filters.category) ||
-        Boolean(search || statusFilter || stockFilter || priceMin || priceMax);
+        Boolean(
+            filters.search ||
+                filters.status ||
+                filters.stock ||
+                filters.price_min ||
+                filters.price_max ||
+                filters.catalog ||
+                filters.category ||
+                filters.sort
+        ) ||
+        Boolean(search || statusFilter || stockFilter || priceMin || priceMax || sortColumn);
 
     return (
         <>
@@ -690,12 +756,67 @@ export default function ProductsIndex() {
                                             className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                         />
                                     </th>
-                                    <th className="px-4 py-3">Produkt</th>
+                                    {isColumnVisible('id') && (
+                                        <th className="px-4 py-3">
+                                            <button
+                                                type="button"
+                                                onClick={() => handleSort('id')}
+                                                className="flex items-center gap-1 text-gray-600"
+                                            >
+                                                <span>ID</span>
+                                                {renderSortIcon('id')}
+                                            </button>
+                                        </th>
+                                    )}
+                                    <th className="px-4 py-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => handleSort('name')}
+                                            className="flex items-center gap-1 text-gray-600"
+                                        >
+                                            <span>Produkt</span>
+                                            {renderSortIcon('name')}
+                                        </button>
+                                    </th>
+                                    {isColumnVisible('sku') && (
+                                        <th className="px-4 py-3">
+                                            <button
+                                                type="button"
+                                                onClick={() => handleSort('sku')}
+                                                className="flex items-center gap-1 text-gray-600"
+                                            >
+                                                <span>SKU</span>
+                                                {renderSortIcon('sku')}
+                                            </button>
+                                        </th>
+                                    )}
                                     {isColumnVisible('catalog') && <th className="px-4 py-3">Katalog</th>}
                                     {isColumnVisible('category') && <th className="px-4 py-3">Kategoria</th>}
-                                    {isColumnVisible('stock') && <th className="px-4 py-3">Stan (razem)</th>}
+                                    {isColumnVisible('stock') && (
+                                        <th className="px-4 py-3">
+                                            <button
+                                                type="button"
+                                                onClick={() => handleSort('quantity')}
+                                                className="flex items-center gap-1 text-gray-600"
+                                            >
+                                                <span>Stan (razem)</span>
+                                                {renderSortIcon('quantity')}
+                                            </button>
+                                        </th>
+                                    )}
                                     {isColumnVisible('warehouses') && <th className="px-4 py-3">Magazyny</th>}
-                                    {isColumnVisible('price') && <th className="px-4 py-3 text-right">Cena netto</th>}
+                                    {isColumnVisible('price') && (
+                                        <th className="px-4 py-3 text-right">
+                                            <button
+                                                type="button"
+                                                onClick={() => handleSort('price')}
+                                                className="ml-auto flex items-center gap-1 text-gray-600"
+                                            >
+                                                <span>Cena netto</span>
+                                                {renderSortIcon('price')}
+                                            </button>
+                                        </th>
+                                    )}
                                     {isColumnVisible('status') && <th className="px-4 py-3">Status</th>}
                                     {isColumnVisible('actions') && <th className="px-4 py-3 text-right">Akcje</th>}
                                 </tr>
@@ -711,6 +832,9 @@ export default function ProductsIndex() {
                                                 className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                             />
                                         </td>
+                                        {isColumnVisible('id') && (
+                                            <td className="px-4 py-3 text-gray-600">{product.id}</td>
+                                        )}
                                         <td className="px-4 py-3">
                                             <div className="flex items-center gap-3">
                                                 {product.images && product.images.length > 0 ? (
@@ -737,6 +861,9 @@ export default function ProductsIndex() {
                                                 </div>
                                             </div>
                                         </td>
+                                        {isColumnVisible('sku') && (
+                                            <td className="px-4 py-3 text-gray-600">{product.sku ?? '—'}</td>
+                                        )}
                                         {isColumnVisible('catalog') && (
                                             <td className="px-4 py-3 text-gray-600">{product.catalog?.name ?? '—'}</td>
                                         )}

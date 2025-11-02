@@ -25,6 +25,12 @@ class ProductController extends Controller
     {
         $priceMin = $request->input('price_min');
         $priceMax = $request->input('price_max');
+        $sortRaw = $request->string('sort')->trim()->toString();
+        $directionRaw = strtolower($request->string('direction', 'asc')->trim()->toString() ?: 'asc');
+
+        $allowedSorts = ['name', 'sku', 'quantity', 'price', 'id'];
+        $sort = in_array($sortRaw, $allowedSorts, true) ? $sortRaw : null;
+        $direction = in_array($directionRaw, ['asc', 'desc'], true) ? $directionRaw : 'asc';
 
         $filters = [
             'search' => $request->string('search')->trim()->toString(),
@@ -36,6 +42,8 @@ class ProductController extends Controller
             'stock' => $request->string('stock')->trim()->toString(),
             'price_min' => is_numeric($priceMin) ? (float) $priceMin : null,
             'price_max' => is_numeric($priceMax) ? (float) $priceMax : null,
+            'sort' => $sort,
+            'direction' => $direction,
         ];
 
         $query = $request->user()->products()->with([
@@ -104,8 +112,21 @@ class ProductController extends Controller
             });
         }
 
+        if ($sort === 'name') {
+            $query->orderBy('products.name', $direction);
+        } elseif ($sort === 'sku') {
+            $query->orderBy('products.sku', $direction);
+        } elseif ($sort === 'price') {
+            $query->orderBy('products.sale_price_net', $direction);
+        } elseif ($sort === 'id') {
+            $query->orderBy('products.id', $direction);
+        } elseif ($sort === 'quantity') {
+            $query->orderByRaw('COALESCE(stock_totals.total_available, 0) '.$direction);
+        } else {
+            $query->orderByDesc('products.updated_at');
+        }
+
         $products = $query
-            ->latest('updated_at')
             ->paginate(max(1, $filters['per_page']))
             ->withQueryString()
             ->through(fn (Product $product) => [
