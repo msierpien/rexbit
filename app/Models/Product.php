@@ -6,6 +6,7 @@ use App\Enums\ProductStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Product extends Model
 {
@@ -74,5 +75,49 @@ class Product extends Model
         }
 
         return round($this->sale_price_net * (1 + $this->sale_vat_rate / 100), 2);
+    }
+
+    public function warehouseStocks(): HasMany
+    {
+        return $this->hasMany(WarehouseStockTotal::class);
+    }
+
+    /**
+     * Get stock for specific warehouse
+     */
+    public function getStockForWarehouse($warehouseId): ?WarehouseStockTotal
+    {
+        return $this->warehouseStocks()->where('warehouse_location_id', $warehouseId)->first();
+    }
+
+    /**
+     * Get total available stock (on_hand - reserved)
+     */
+    public function getAvailableStock($warehouseId = null): float
+    {
+        if ($warehouseId) {
+            $stock = $this->getStockForWarehouse($warehouseId);
+            return $stock ? ($stock->on_hand - $stock->reserved) : 0;
+        }
+
+        return $this->warehouseStocks()
+            ->selectRaw('SUM(on_hand - reserved) as available')
+            ->value('available') ?: 0;
+    }
+
+    /**
+     * Get total on hand stock across all warehouses
+     */
+    public function getTotalOnHand(): float
+    {
+        return $this->warehouseStocks()->sum('on_hand') ?: 0;
+    }
+
+    /**
+     * Check if product has sufficient stock in warehouse
+     */
+    public function hasSufficientStock($quantity, $warehouseId = null): bool
+    {
+        return $this->getAvailableStock($warehouseId) >= $quantity;
     }
 }

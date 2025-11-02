@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Enums\WarehouseDocumentStatus;
 use App\Models\User;
 use App\Models\WarehouseDocument;
 use App\Models\WarehouseLocation;
@@ -22,28 +23,35 @@ class WarehouseDocumentFactory extends Factory
             'number' => 'WD-'.fake()->unique()->numerify('####'),
             'issued_at' => fake()->dateTimeBetween('-1 month', 'now'),
             'metadata' => [],
-            'status' => fake()->randomElement(['draft', 'confirmed', 'completed']),
+            'status' => fake()->randomElement([WarehouseDocumentStatus::DRAFT, WarehouseDocumentStatus::POSTED]),
         ];
     }
 
     public function draft(): static
     {
         return $this->state(fn (array $attributes) => [
-            'status' => 'draft',
+            'status' => WarehouseDocumentStatus::DRAFT,
         ]);
     }
 
-    public function confirmed(): static
+    public function posted(): static
     {
         return $this->state(fn (array $attributes) => [
-            'status' => 'confirmed',
+            'status' => WarehouseDocumentStatus::POSTED,
         ]);
     }
 
-    public function completed(): static
+    public function cancelled(): static
     {
         return $this->state(fn (array $attributes) => [
-            'status' => 'completed',
+            'status' => WarehouseDocumentStatus::CANCELLED,
+        ]);
+    }
+
+    public function archived(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'status' => WarehouseDocumentStatus::ARCHIVED,
         ]);
     }
 }

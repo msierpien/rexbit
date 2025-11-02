@@ -2,6 +2,7 @@
 
 namespace App\Policies;
 
+use App\Enums\WarehouseDocumentStatus;
 use App\Models\User;
 use App\Models\WarehouseDocument;
 
@@ -24,11 +25,11 @@ class WarehouseDocumentPolicy
 
     public function update(User $user, WarehouseDocument $document): bool
     {
-        return $user->id === $document->user_id && $document->status !== 'posted';
+        return $user->id === $document->user_id && $document->canBeEdited();
     }
 
     public function delete(User $user, WarehouseDocument $document): bool
     {
-        return $user->id === $document->user_id && $document->status === 'draft';
+        return $user->id === $document->user_id && $document->canBeDeleted();
     }
 }

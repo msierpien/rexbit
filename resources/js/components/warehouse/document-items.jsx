@@ -1,4 +1,8 @@
-import { Button } from '@/components/ui/button.jsx';
+import React from 'react';
+import { Trash2, Plus } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import WarehouseStockDisplay from './stock-display';
+import ProductSelect from './product-select';
 
 const emptyItem = {
     product_id: '',
@@ -7,7 +11,7 @@ const emptyItem = {
     vat_rate: '',
 };
 
-export default function DocumentItems({ items, onChange, products }) {
+export default function DocumentItems({ items, onChange, products, warehouseId = null }) {
     const rows = items.length ? items : [emptyItem];
 
     const updateItem = (index, field, value) => {
@@ -35,21 +39,35 @@ export default function DocumentItems({ items, onChange, products }) {
                     key={index}
                     className="grid grid-cols-1 gap-4 rounded-lg border border-gray-200 bg-gray-50 p-4 md:grid-cols-5"
                 >
-                    <label className="flex flex-col text-sm text-gray-600 md:col-span-2">
-                        <span className="mb-1 font-medium text-gray-700">Produkt</span>
-                        <select
+                    <div className="flex flex-col text-sm text-gray-600 md:col-span-2">
+                        <label className="mb-1">
+                            <span className="font-medium text-gray-700">Produkt</span>
+                        </label>
+                        <ProductSelect
+                            products={products}
                             value={item.product_id ?? ''}
-                            onChange={(event) => updateItem(index, 'product_id', event.target.value)}
-                            className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
-                        >
-                            <option value="">Wybierz produkt</option>
-                            {products.map((product) => (
-                                <option key={product.id} value={product.id}>
-                                    {product.name} {product.sku ? `(${product.sku})` : ''}
-                                </option>
-                            ))}
-                        </select>
-                    </label>
+                            onChange={(productId) => updateItem(index, 'product_id', productId)}
+                            placeholder="Wyszukaj po nazwie, SKU lub EAN..."
+                        />
+                        
+                        {item.product_id && (
+                            <div className="mt-2">
+                                {(() => {
+                                    const selectedProduct = products.find(p => p.id == item.product_id);
+                                    if (selectedProduct?.warehouse_stocks) {
+                                        return (
+                                            <WarehouseStockDisplay 
+                                                stocks={selectedProduct.warehouse_stocks}
+                                                warehouseId={warehouseId}
+                                                compact={true}
+                                            />
+                                        );
+                                    }
+                                    return <div className="text-xs text-gray-400">Brak danych o stanie</div>;
+                                })()}
+                            </div>
+                        )}
+                    </div>
 
                     <label className="flex flex-col text-sm text-gray-600">
                         <span className="mb-1 font-medium text-gray-700">Ilość</span>

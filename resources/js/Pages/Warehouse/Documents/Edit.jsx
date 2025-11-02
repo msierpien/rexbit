@@ -45,6 +45,12 @@ export default function WarehouseDocumentEdit() {
                     {flash.status}
                 </div>
             )}
+            
+            {flash?.error && (
+                <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    {flash.error}
+                </div>
+            )}
             <form onSubmit={submit} className="space-y-6">
                 <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
                     <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
@@ -125,7 +131,12 @@ export default function WarehouseDocumentEdit() {
                         <h3 className="text-sm font-semibold text-gray-900">Pozycje dokumentu</h3>
                         <p className="text-xs text-gray-500">Edytuj listę produktów wchodzących w skład dokumentu.</p>
                     </div>
-                    <DocumentItems items={items} onChange={setItems} products={products} />
+                    <DocumentItems 
+                        items={items} 
+                        onChange={setItems} 
+                        products={products} 
+                        warehouseId={data.warehouse_location_id}
+                    />
                 </div>
 
                 <div className="flex items-center gap-3">

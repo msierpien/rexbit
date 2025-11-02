@@ -97,6 +97,14 @@ Route::middleware(['auth', 'role:user,admin'])->group(function (): void {
         ->parameters(['documents' => 'warehouse_document'])
         ->names('warehouse.documents')
         ->except(['show']);
+    
+    // Status management routes for warehouse documents
+    Route::post('/warehouse/documents/{warehouse_document}/post', [WarehouseDocumentController::class, 'post'])
+        ->name('warehouse.documents.post');
+    Route::post('/warehouse/documents/{warehouse_document}/cancel', [WarehouseDocumentController::class, 'cancel'])
+        ->name('warehouse.documents.cancel');
+    Route::post('/warehouse/documents/{warehouse_document}/archive', [WarehouseDocumentController::class, 'archive'])
+        ->name('warehouse.documents.archive');
     Route::get('/warehouse/deliveries', [WarehouseDeliveryController::class, 'index'])->name('warehouse.deliveries.index');
     Route::get('/warehouse/settings', [WarehouseSettingsController::class, 'index'])->name('warehouse.settings');
     Route::post('/warehouse/settings', [WarehouseSettingsController::class, 'update'])->name('warehouse.settings.update');

@@ -1,16 +1,12 @@
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import DashboardLayout from '@/Layouts/DashboardLayout.jsx';
 import { Button } from '@/components/ui/button.jsx';
+import DocumentStatusActions from '@/components/warehouse/document-status-actions.jsx';
 
-function StatusBadge({ status }) {
-    const variants = {
-        posted: 'bg-green-100 text-green-700',
-        draft: 'bg-gray-100 text-gray-600',
-    };
-
+function StatusBadge({ document }) {
     return (
-        <span className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${variants[status] ?? 'bg-gray-100 text-gray-600'}`}>
-            {status}
+        <span className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${document.status_badge_class}`}>
+            {document.status_label}
         </span>
     );
 }
@@ -24,9 +20,14 @@ function DocumentTable({ documents }) {
         );
     }
 
-    const handleDelete = (id) => {
+    const handleDelete = (document) => {
+        if (!document.can_be_deleted) {
+            alert(document.deletion_block_reason || 'Nie można usunąć tego dokumentu.');
+            return;
+        }
+
         if (confirm('Usunąć dokument?')) {
-            router.delete(`/warehouse/documents/${id}`, {
+            router.delete(`/warehouse/documents/${document.id}`, {
                 preserveScroll: true,
             });
         }
@@ -55,14 +56,28 @@ function DocumentTable({ documents }) {
                             <td className="px-4 py-3 text-gray-600">{document.contractor?.name ?? '—'}</td>
                             <td className="px-4 py-3 text-gray-600">{document.issued_at}</td>
                             <td className="px-4 py-3">
-                                <StatusBadge status={document.status} />
+                                <StatusBadge document={document} />
                             </td>
                             <td className="px-4 py-3 text-right">
                                 <div className="flex justify-end gap-2">
-                                    <Button variant="outline" size="sm" asChild>
+                                    <DocumentStatusActions document={document} />
+                                    
+                                    <Button 
+                                        variant="outline" 
+                                        size="sm" 
+                                        asChild
+                                        disabled={!document.can_be_edited}
+                                        title={!document.can_be_edited ? 'Tylko dokumenty robocze mogą być edytowane' : ''}
+                                    >
                                         <Link href={`/warehouse/documents/${document.id}/edit`}>Edytuj</Link>
                                     </Button>
-                                    <Button variant="destructive" size="sm" onClick={() => handleDelete(document.id)}>
+                                    <Button 
+                                        variant="destructive" 
+                                        size="sm" 
+                                        onClick={() => handleDelete(document)}
+                                        disabled={!document.can_be_deleted}
+                                        title={document.deletion_block_reason || ''}
+                                    >
                                         Usuń
                                     </Button>
                                 </div>
@@ -120,6 +135,12 @@ function WarehouseDocumentsIndex() {
                 {flash?.status && (
                     <div className="rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
                         {flash.status}
+                    </div>
+                )}
+
+                {flash?.error && (
+                    <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                        {flash.error}
                     </div>
                 )}
 

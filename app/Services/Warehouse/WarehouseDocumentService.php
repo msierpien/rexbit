@@ -2,6 +2,7 @@
 
 namespace App\Services\Warehouse;
 
+use App\Enums\WarehouseDocumentStatus;
 use App\Models\Product;
 use App\Models\User;
 use App\Models\WarehouseDocument;
@@ -93,23 +94,81 @@ class WarehouseDocumentService
         });
     }
 
-    public function post(WarehouseDocument $document): WarehouseDocument
+    /**
+     * Post (approve) a document
+     */
+    public function post(WarehouseDocument $document, User $user): WarehouseDocument
     {
-        if ($document->status === 'posted') {
+        if ($document->status === WarehouseDocumentStatus::POSTED) {
             return $document;
         }
 
-        return $this->db->transaction(function () use ($document) {
+        if (!$document->canTransitionTo(WarehouseDocumentStatus::POSTED)) {
+            throw new \InvalidArgumentException('Dokument nie może być zatwierdzony w obecnym statusie.');
+        }
+
+        return $this->db->transaction(function () use ($document, $user) {
             $document->loadMissing('items');
 
+            // Apply stock movements
             foreach ($document->items as $item) {
                 $this->stockService->applyMovement($document, $item);
             }
 
-            $document->forceFill(['status' => 'posted'])->save();
+            // Change status using the new method
+            $document->changeStatus(WarehouseDocumentStatus::POSTED, $user);
 
             return $document->fresh('items');
         });
+    }
+
+    /**
+     * Cancel a document
+     */
+    public function cancel(WarehouseDocument $document, User $user, string $reason = null): WarehouseDocument
+    {
+        if (!$document->canTransitionTo(WarehouseDocumentStatus::CANCELLED)) {
+            throw new \InvalidArgumentException('Dokument nie może być anulowany w obecnym statusie.');
+        }
+
+        return $this->db->transaction(function () use ($document, $user, $reason) {
+            $document->loadMissing('items');
+
+            // If document was posted, reverse stock movements
+            if ($document->status === WarehouseDocumentStatus::POSTED) {
+                foreach ($document->items as $item) {
+                    $this->stockService->reverseMovement($document, $item);
+                }
+            }
+
+            // Add cancellation reason to metadata
+            if ($reason) {
+                $metadata = $document->metadata ?? [];
+                $metadata['cancellation_reason'] = $reason;
+                $metadata['cancelled_at'] = now()->toISOString();
+                $document->metadata = $metadata;
+                $document->save();
+            }
+
+            // Change status
+            $document->changeStatus(WarehouseDocumentStatus::CANCELLED, $user);
+
+            return $document->fresh('items');
+        });
+    }
+
+    /**
+     * Archive a document
+     */
+    public function archive(WarehouseDocument $document, User $user): WarehouseDocument
+    {
+        if (!$document->canTransitionTo(WarehouseDocumentStatus::ARCHIVED)) {
+            throw new \InvalidArgumentException('Dokument nie może być zarchiwizowany w obecnym statusie.');
+        }
+
+        $document->changeStatus(WarehouseDocumentStatus::ARCHIVED, $user);
+
+        return $document->fresh('items');
     }
 
     protected function syncItems(WarehouseDocument $document, array $items): void
@@ -153,7 +212,7 @@ class WarehouseDocumentService
             'number' => ['nullable', 'string', 'max:50'],
             'issued_at' => ['required', 'date'],
             'metadata' => ['nullable', 'array'],
-            'status' => ['nullable', 'in:draft,posted'],
+            'status' => ['nullable', Rule::enum(WarehouseDocumentStatus::class)],
             'items' => ['nullable', 'array', 'min:1'],
             'items.*.product_id' => ['required', 'exists:products,id'],
             'items.*.quantity' => ['required', 'numeric'],

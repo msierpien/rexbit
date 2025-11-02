@@ -120,7 +120,12 @@ export default function WarehouseDocumentCreate() {
                         <h3 className="text-sm font-semibold text-gray-900">Pozycje dokumentu</h3>
                         <p className="text-xs text-gray-500">Dodaj produkty wraz z ilością i parametrami cenowymi.</p>
                     </div>
-                    <DocumentItems items={items} onChange={setItems} products={products} />
+                    <DocumentItems 
+                        items={items} 
+                        onChange={setItems} 
+                        products={products} 
+                        warehouseId={data.warehouse_location_id}
+                    />
                     {errors['items'] && <p className="mt-2 text-xs text-red-600">{errors.items}</p>}
                 </div>
 
