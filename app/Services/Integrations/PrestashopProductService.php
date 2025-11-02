@@ -280,4 +280,28 @@ class PrestashopProductService
             );
         }
     }
+
+    public function fetchProductStock(Integration $integration, string $externalProductId): ?float
+    {
+        if ($integration->type !== IntegrationType::PRESTASHOP) {
+            throw new \InvalidArgumentException('Nieobsługiwany typ integracji dla pobierania stanów.');
+        }
+
+        $config = $this->integrationService->runtimeConfig($integration);
+
+        $response = $this->performProductRequest($config, [
+            'output_format' => 'JSON',
+            'display' => 'full',
+            'filter[id]' => sprintf('[%s]', $externalProductId),
+            'limit' => '0,1',
+        ]);
+
+        $items = Arr::get($response->json(), 'products', []);
+
+        if (empty($items)) {
+            return null;
+        }
+
+        return (float) Arr::get($items[0], 'quantity', 0);
+    }
 }

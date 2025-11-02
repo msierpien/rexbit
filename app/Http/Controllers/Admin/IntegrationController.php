@@ -63,11 +63,17 @@ class IntegrationController extends Controller
         $defaultType = $request->string('type')->toString();
         $selectedType = IntegrationType::tryFrom($defaultType) ?? $types->first();
 
+        $warehouses = $request->user()?->warehouseLocations()
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->map(fn ($warehouse) => $warehouse->only(['id', 'name']))
+            ->values() ?? collect();
+
         return Inertia::render('Integrations/Create', [
             'types' => $types
                 ->map(fn (IntegrationType $type) => array_merge(
                     $this->typeMetadata($type),
-                    ['fields' => $this->driverFields($type, isEdit: false)]
+                    ['fields' => $this->driverFields($type, false, ['warehouses' => $warehouses])]
                 )),
             'defaults' => [
                 'type' => $selectedType?->value,
@@ -76,6 +82,7 @@ class IntegrationController extends Controller
                         $type->value => $this->driverDefaultConfig($type),
                     ]),
             ],
+            'warehouses' => $warehouses,
         ]);
     }
 
@@ -159,6 +166,12 @@ class IntegrationController extends Controller
             ])->values()
             : collect();
 
+        $warehouses = $integration->user
+            ? $integration->user->warehouseLocations()->orderBy('name')->get()->map(
+                fn ($warehouse) => $warehouse->only(['id', 'name'])
+            )->values()
+            : collect();
+
         return Inertia::render('Integrations/Edit', [
             'integration' => array_merge(
                 $this->presentIntegration($integration),
@@ -168,6 +181,13 @@ class IntegrationController extends Controller
                         'base_url' => Arr::get($integration->config, 'base_url'),
                         'description' => Arr::get($integration->config, 'description'),
                         'product_listing_enabled' => Arr::get($integration->config, 'product_listing_enabled', false),
+                        'inventory_sync_mode' => Arr::get($integration->config, 'inventory_sync_mode', 'disabled'),
+                        'primary_warehouse_id' => Arr::get($integration->config, 'primary_warehouse_id'),
+                        'inventory_sync_interval_minutes' => Arr::get(
+                            $integration->config,
+                            'inventory_sync_interval_minutes',
+                            180
+                        ),
                     ],
                     'timestamps' => [
                         'created_at' => $integration->created_at?->toDateTimeString(),
@@ -177,7 +197,7 @@ class IntegrationController extends Controller
                     ],
                 ]
             ),
-            'driver_fields' => $this->driverFields($integration->type, isEdit: true),
+            'driver_fields' => $this->driverFields($integration->type, true, ['warehouses' => $warehouses]),
             'supports_import_profiles' => $integration->type === IntegrationType::CSV_XML_IMPORT,
             'profiles' => $profiles->all(),
             'profile_meta' => [
@@ -185,6 +205,7 @@ class IntegrationController extends Controller
                 'category_fields' => $this->categoryMappingFields(),
             ],
             'catalogs' => $catalogs->all(),
+            'warehouses' => $warehouses->all(),
             'can' => [
                 'delete' => $request->user()?->can('delete', $integration) ?? false,
                 'update' => $request->user()?->can('update', $integration) ?? false,
@@ -293,7 +314,7 @@ class IntegrationController extends Controller
         return Str::of($type->value)->replace('-', ' ')->title()->toString();
     }
 
-    protected function driverFields(IntegrationType $type, bool $isEdit): array
+    protected function driverFields(IntegrationType $type, bool $isEdit, array $context = []): array
     {
         return match ($type) {
             IntegrationType::PRESTASHOP => [
@@ -321,6 +342,45 @@ class IntegrationController extends Controller
                     'helper' => 'Po zaznaczeniu integracja udostępnia listę produktów w module Prestashop.',
                     'default' => false,
                 ],
+                [
+                    'name' => 'inventory_sync_mode',
+                    'label' => 'Synchronizacja stanów magazynowych',
+                    'component' => 'select',
+                    'default' => 'disabled',
+                    'options' => [
+                        ['value' => 'disabled', 'label' => 'Wyłączona'],
+                        ['value' => 'local_to_presta', 'label' => 'Lokalny magazyn → PrestaShop'],
+                        ['value' => 'prestashop_to_local', 'label' => 'PrestaShop → lokalny magazyn'],
+                    ],
+                    'helper' => 'Wybierz kierunek synchronizacji stanów magazynowych.',
+                ],
+                [
+                    'name' => 'primary_warehouse_id',
+                    'label' => 'Główny magazyn (dla synchronizacji lokalnej)',
+                    'component' => 'select',
+                    'options' => collect($context['warehouses'] ?? [])->map(function ($warehouse) {
+                        $id = $warehouse['id'] ?? $warehouse->id ?? null;
+                        $name = $warehouse['name'] ?? $warehouse->name ?? null;
+
+                        if ($id === null) {
+                            return null;
+                        }
+
+                        return [
+                            'value' => (string) $id,
+                            'label' => $name ?? 'Magazyn',
+                        ];
+                    })->filter()->values(),
+                    'helper' => 'Wymagane, jeśli źródłem prawdy jest lokalny magazyn.',
+                ],
+                [
+                    'name' => 'inventory_sync_interval_minutes',
+                    'label' => 'Interwał synchronizacji (minuty)',
+                    'type' => 'number',
+                    'default' => 180,
+                    'min' => 5,
+                    'helper' => 'Minimalny interwał 5 minut. Domyślnie 180 (3 godziny).',
+                ],
             ],
             IntegrationType::CSV_XML_IMPORT => [],
         };
@@ -333,6 +393,9 @@ class IntegrationController extends Controller
                 'base_url' => '',
                 'api_key' => '',
                 'product_listing_enabled' => false,
+                'inventory_sync_mode' => 'disabled',
+                'inventory_sync_interval_minutes' => 180,
+                'primary_warehouse_id' => null,
             ],
             IntegrationType::CSV_XML_IMPORT => [],
         };

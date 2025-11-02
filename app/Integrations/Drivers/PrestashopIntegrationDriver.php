@@ -33,6 +33,9 @@ class PrestashopIntegrationDriver implements IntegrationDriver
                 ? ['nullable', 'string', 'min:8']
                 : ['required', 'string', 'min:8'],
             'product_listing_enabled' => ['sometimes', 'boolean'],
+            'inventory_sync_mode' => ['required', 'in:disabled,local_to_presta,prestashop_to_local'],
+            'inventory_sync_interval_minutes' => ['nullable', 'integer', 'min:5'],
+            'primary_warehouse_id' => ['nullable', 'integer', 'exists:warehouse_locations,id', 'required_if:inventory_sync_mode,local_to_presta'],
         ];
     }
 
@@ -46,6 +49,9 @@ class PrestashopIntegrationDriver implements IntegrationDriver
             'base_url' => '',
             'api_key' => '',
             'product_listing_enabled' => false,
+            'inventory_sync_mode' => 'disabled',
+            'inventory_sync_interval_minutes' => 180,
+            'primary_warehouse_id' => null,
         ];
     }
 
@@ -56,6 +62,19 @@ class PrestashopIntegrationDriver implements IntegrationDriver
     {
         $baseUrl = rtrim((string) Arr::get($config, 'base_url', ''), '/');
 
+        $mode = Arr::get($config, 'inventory_sync_mode', 'disabled');
+        if (! in_array($mode, ['disabled', 'local_to_presta', 'prestashop_to_local'], true)) {
+            $mode = 'disabled';
+        }
+
+        $interval = (int) Arr::get($config, 'inventory_sync_interval_minutes', 180);
+        if ($interval < 5) {
+            $interval = 5;
+        }
+
+        $primaryWarehouse = Arr::get($config, 'primary_warehouse_id');
+        $primaryWarehouse = $mode === 'local_to_presta' ? ($primaryWarehouse ? (int) $primaryWarehouse : null) : null;
+
         $normalized = [
             'description' => Arr::get($config, 'description'),
             'base_url' => $baseUrl,
@@ -63,6 +82,9 @@ class PrestashopIntegrationDriver implements IntegrationDriver
                 Arr::get($config, 'product_listing_enabled', false),
                 FILTER_VALIDATE_BOOL
             ),
+            'inventory_sync_mode' => $mode,
+            'inventory_sync_interval_minutes' => $interval,
+            'primary_warehouse_id' => $primaryWarehouse,
         ];
 
         if (Arr::has($config, 'api_key')) {

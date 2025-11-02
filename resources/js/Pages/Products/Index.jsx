@@ -667,7 +667,7 @@ export default function ProductsIndex() {
             return;
         }
 
-        if (!selectedProductIds.length) {
+        if (!selectionState.isAllSelected && !selectedProductIds.length) {
             setLinkError('Wybierz co najmniej jeden produkt lokalny.');
             return;
         }

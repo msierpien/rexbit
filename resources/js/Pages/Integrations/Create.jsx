@@ -13,6 +13,13 @@ import { Button } from '@/components/ui/button.jsx';
 import { Input } from '@/components/ui/input.jsx';
 import { Textarea } from '@/components/ui/textarea.jsx';
 import { Checkbox } from '@/components/ui/checkbox.jsx';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert.jsx';
 import { Store, Layers3, ShieldCheck } from 'lucide-react';
@@ -71,6 +78,44 @@ function FieldInput({ field, value, onChange, error }) {
         );
     }
 
+    if (field.component === 'select' || field.type === 'select') {
+        const options = field.options ?? [];
+        const normalizedValue = value === null || value === undefined || value === ''
+            ? undefined
+            : String(value);
+
+        return (
+            <div className="space-y-2">
+                <label htmlFor={`field-${field.name}`} className="text-sm font-medium text-foreground">
+                    {field.label}
+                </label>
+                <Select
+                    value={normalizedValue ?? (options.length === 0 ? undefined : normalizedValue)}
+                    onValueChange={onChange}
+                    disabled={field.disabled || options.length === 0}
+                >
+                    <SelectTrigger id={`field-${field.name}`}>
+                        <SelectValue placeholder={field.placeholder ?? 'Wybierz...'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {options.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                            </SelectItem>
+                        ))}
+                        {options.length === 0 && (
+                            <SelectItem value="__placeholder__" disabled>
+                                Brak dostępnych opcji
+                            </SelectItem>
+                        )}
+                    </SelectContent>
+                </Select>
+                {field.helper && <p className="text-xs text-muted-foreground">{field.helper}</p>}
+                {error && <p className="text-xs text-red-600">{error}</p>}
+            </div>
+        );
+    }
+
     if (field.type === 'textarea') {
         return (
             <div className="space-y-2">
@@ -100,6 +145,7 @@ function FieldInput({ field, value, onChange, error }) {
                 id={field.name}
                 type={field.type ?? 'text'}
                 value={value ?? ''}
+                min={field.min}
                 onChange={(event) => onChange(event.target.value)}
                 required={field.required}
                 placeholder={field.placeholder}
@@ -146,6 +192,12 @@ function IntegrationsCreate() {
     }, [currentType]);
 
     const activeFields = (activeType?.fields ?? []);
+
+    useEffect(() => {
+        if (data.inventory_sync_mode !== 'local_to_presta' && data.primary_warehouse_id) {
+            setData('primary_warehouse_id', '');
+        }
+    }, [data.inventory_sync_mode]);
 
     const handleSubmit = (event) => {
         event.preventDefault();
@@ -235,15 +287,24 @@ function IntegrationsCreate() {
 
                             {activeFields.length > 0 ? (
                                 <div className="space-y-5">
-                                    {activeFields.map((field) => (
-                            <FieldInput
-                                key={field.name}
-                                field={field}
-                                value={data[field.name]}
-                                onChange={(nextValue) => setData(field.name, nextValue)}
-                                error={errors?.[field.name]}
-                            />
-                                    ))}
+                                    {activeFields.map((field) => {
+                                        if (
+                                            field.name === 'primary_warehouse_id' &&
+                                            data.inventory_sync_mode !== 'local_to_presta'
+                                        ) {
+                                            return null;
+                                        }
+
+                                        return (
+                                            <FieldInput
+                                                key={field.name}
+                                                field={field}
+                                                value={data[field.name]}
+                                                onChange={(nextValue) => setData(field.name, nextValue)}
+                                                error={errors?.[field.name]}
+                                            />
+                                        );
+                                    })}
                                 </div>
                             ) : (
                                 <Alert>

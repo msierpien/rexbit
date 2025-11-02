@@ -54,10 +54,12 @@ class ProductIntegrationLinkController extends Controller
             LinkIntegrationProducts::dispatch($integration, $chunk);
         }
 
+        $queuedCount = count($productIds);
+
         return response()->json([
             'status' => 'queued',
-            'queued_product_ids' => $productIds,
-            'queued_count' => count($productIds),
+            'queued_product_ids' => $queuedCount <= 500 ? $productIds : [],
+            'queued_count' => $queuedCount,
         ], 202);
     }
 
@@ -170,6 +172,6 @@ class ProductIntegrationLinkController extends Controller
             }
         }
 
-        return $query->pluck('products.id')->all();
+        return $query->distinct()->pluck('products.id')->all();
     }
 }

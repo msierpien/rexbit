@@ -1,5 +1,5 @@
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import DashboardLayout from '@/Layouts/DashboardLayout.jsx';
 import MappingModal from '@/components/MappingModal.jsx';
 import {
@@ -118,6 +118,15 @@ function ConfigForm({ integration, fields, errors }) {
         ...initialConfig,
     });
 
+    useEffect(() => {
+        if (
+            configForm.data.inventory_sync_mode !== 'local_to_presta' &&
+            configForm.data.primary_warehouse_id
+        ) {
+            configForm.setData('primary_warehouse_id', '');
+        }
+    }, [configForm.data.inventory_sync_mode]);
+
     const submit = (event) => {
         event.preventDefault();
         configForm.put(`/integrations/${integration.id}`, {
@@ -166,6 +175,13 @@ function ConfigForm({ integration, fields, errors }) {
                     {fields.length > 0 && (
                         <div className="space-y-4">
                             {fields.map((field) => {
+                                if (
+                                    field.name === 'primary_warehouse_id' &&
+                                    configForm.data.inventory_sync_mode !== 'local_to_presta'
+                                ) {
+                                    return null;
+                                }
+
                                 if (field.type === 'checkbox') {
                                     const checked = Boolean(configForm.data[field.name]);
 
@@ -198,6 +214,92 @@ function ConfigForm({ integration, fields, errors }) {
                                     );
                                 }
 
+                                if (field.component === 'select' || field.type === 'select') {
+                                    const options = field.options ?? [];
+
+                                    return (
+                                        <div key={field.name} className="space-y-2">
+                                            <label
+                                                htmlFor={`field-${field.name}`}
+                                                className="text-sm font-medium text-foreground"
+                                            >
+                                                {field.label}
+                                            </label>
+                                            <Select
+                                                value={configForm.data[field.name] ?? ''}
+                                                onValueChange={(value) => configForm.setData(field.name, value)}
+                                                disabled={field.disabled}
+                                            >
+                                                <SelectTrigger id={`field-${field.name}`}>
+                                                    <SelectValue placeholder={field.placeholder ?? 'Wybierz...'} />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {options.map((option) => (
+                                                        <SelectItem key={option.value} value={option.value}>
+                                                            {option.label}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                            {field.helper && (
+                                                <p className="text-xs text-muted-foreground">{field.helper}</p>
+                                            )}
+                                            {(configForm.errors[field.name] || errors?.[field.name]) && (
+                                                <p className="text-xs text-red-600">
+                                                    {configForm.errors[field.name] ?? errors[field.name]}
+                                                </p>
+                                            )}
+                                        </div>
+                                    );
+                                }
+
+                                if (field.component === 'select' || field.type === 'select') {
+                                    const options = field.options ?? [];
+                                    const normalizedValue = configForm.data[field.name]
+                                        ? String(configForm.data[field.name])
+                                        : undefined;
+
+                                    return (
+                                        <div key={field.name} className="space-y-2">
+                                            <label
+                                                htmlFor={`field-${field.name}`}
+                                                className="text-sm font-medium text-foreground"
+                                            >
+                                                {field.label}
+                                            </label>
+                                            <Select
+                                                value={normalizedValue}
+                                                onValueChange={(value) => configForm.setData(field.name, value)}
+                                                disabled={field.disabled || options.length === 0}
+                                            >
+                                                <SelectTrigger id={`field-${field.name}`}>
+                                                    <SelectValue placeholder={field.placeholder ?? 'Wybierz...'} />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {options.map((option) => (
+                                                        <SelectItem key={option.value} value={option.value}>
+                                                            {option.label}
+                                                        </SelectItem>
+                                                    ))}
+                                                    {options.length === 0 && (
+                                                        <SelectItem value="__placeholder__" disabled>
+                                                            Brak dostępnych opcji
+                                                        </SelectItem>
+                                                    )}
+                                                </SelectContent>
+                                            </Select>
+                                            {field.helper && (
+                                                <p className="text-xs text-muted-foreground">{field.helper}</p>
+                                            )}
+                                            {(configForm.errors[field.name] || errors?.[field.name]) && (
+                                                <p className="text-xs text-red-600">
+                                                    {configForm.errors[field.name] ?? errors[field.name]}
+                                                </p>
+                                            )}
+                                        </div>
+                                    );
+                                }
+
                                 return (
                                     <div key={field.name} className="space-y-2">
                                         <label
@@ -210,6 +312,7 @@ function ConfigForm({ integration, fields, errors }) {
                                             id={`field-${field.name}`}
                                             type={field.type ?? 'text'}
                                             value={configForm.data[field.name] ?? ''}
+                                            min={field.min}
                                             onChange={(event) => configForm.setData(field.name, event.target.value)}
                                             placeholder={field.placeholder}
                                             required={field.required}

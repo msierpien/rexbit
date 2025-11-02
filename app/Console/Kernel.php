@@ -20,6 +20,7 @@ class Kernel extends ConsoleKernel
         $schedule->command('integrations:run-imports')
             ->everyFiveMinutes()
             ->withoutOverlapping();
+
     }
 
     protected function commands(): void

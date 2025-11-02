@@ -107,17 +107,25 @@ class WarehouseDocumentService
             throw new \InvalidArgumentException('Dokument nie może być zatwierdzony w obecnym statusie.');
         }
 
-        return $this->db->transaction(function () use ($document, $user) {
+        $postedDocument = $this->db->transaction(function () use ($document, $user) {
             $document->loadMissing('items');
 
             // Stock movements are now handled automatically in changeStatus()
             // when transitioning from draft to posted status
-            
+
             // Change status using the new method
             $document->changeStatus(WarehouseDocumentStatus::POSTED, $user);
 
             return $document->fresh('items');
         });
+
+        app(\App\Services\Integrations\IntegrationInventorySyncService::class)
+            ->dispatchForUser(
+                $postedDocument->user,
+                $postedDocument->items->pluck('product_id')->unique()->values()->all()
+            );
+
+        return $postedDocument;
     }
 
     /**
@@ -129,7 +137,7 @@ class WarehouseDocumentService
             throw new \InvalidArgumentException('Dokument nie może być anulowany w obecnym statusie.');
         }
 
-        return $this->db->transaction(function () use ($document, $user, $reason) {
+        $cancelledDocument = $this->db->transaction(function () use ($document, $user, $reason) {
             $document->loadMissing('items');
 
             // Stock movements are now handled automatically in changeStatus()
@@ -149,6 +157,14 @@ class WarehouseDocumentService
 
             return $document->fresh('items');
         });
+
+        app(\App\Services\Integrations\IntegrationInventorySyncService::class)
+            ->dispatchForUser(
+                $cancelledDocument->user,
+                $cancelledDocument->items->pluck('product_id')->unique()->values()->all()
+            );
+
+        return $cancelledDocument;
     }
 
     /**
