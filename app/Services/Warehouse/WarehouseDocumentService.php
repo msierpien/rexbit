@@ -110,11 +110,9 @@ class WarehouseDocumentService
         return $this->db->transaction(function () use ($document, $user) {
             $document->loadMissing('items');
 
-            // Apply stock movements
-            foreach ($document->items as $item) {
-                $this->stockService->applyMovement($document, $item);
-            }
-
+            // Stock movements are now handled automatically in changeStatus()
+            // when transitioning from draft to posted status
+            
             // Change status using the new method
             $document->changeStatus(WarehouseDocumentStatus::POSTED, $user);
 
@@ -134,12 +132,8 @@ class WarehouseDocumentService
         return $this->db->transaction(function () use ($document, $user, $reason) {
             $document->loadMissing('items');
 
-            // If document was posted, reverse stock movements
-            if ($document->status === WarehouseDocumentStatus::POSTED) {
-                foreach ($document->items as $item) {
-                    $this->stockService->reverseMovement($document, $item);
-                }
-            }
+            // Stock movements are now handled automatically in changeStatus()
+            // when transitioning from posted to cancelled status
 
             // Add cancellation reason to metadata
             if ($reason) {

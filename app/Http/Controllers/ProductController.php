@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
+use Illuminate\Support\Facades\DB;
 
 class ProductController extends Controller
 {
@@ -22,6 +23,9 @@ class ProductController extends Controller
 
     public function index(Request $request): Response
     {
+        $priceMin = $request->input('price_min');
+        $priceMax = $request->input('price_max');
+
         $filters = [
             'search' => $request->string('search')->trim()->toString(),
             'catalog' => $request->integer('catalog'),
@@ -29,6 +33,9 @@ class ProductController extends Controller
             'status' => $request->string('status')->trim()->toString(),
             'view' => $request->string('view')->trim()->toString() ?: 'table',
             'per_page' => (int) $request->integer('per_page', 15),
+            'stock' => $request->string('stock')->trim()->toString(),
+            'price_min' => is_numeric($priceMin) ? (float) $priceMin : null,
+            'price_max' => is_numeric($priceMax) ? (float) $priceMax : null,
         ];
 
         $query = $request->user()->products()->with([
@@ -37,6 +44,19 @@ class ProductController extends Controller
             'manufacturer',
             'warehouseStocks.warehouse',
         ]);
+        $stockTotals = DB::table('warehouse_stock_totals')
+            ->select('product_id')
+            ->selectRaw('COALESCE(SUM(on_hand), 0) as total_on_hand')
+            ->selectRaw('COALESCE(SUM(reserved), 0) as total_reserved')
+            ->selectRaw('COALESCE(SUM(incoming), 0) as total_incoming')
+            ->selectRaw('COALESCE(SUM(on_hand - reserved), 0) as total_available')
+            ->groupBy('product_id');
+
+        $query
+            ->select(['products.*'])
+            ->leftJoinSub($stockTotals, 'stock_totals', function ($join) {
+                $join->on('stock_totals.product_id', '=', 'products.id');
+            });
 
         if ($filters['search']) {
             $query->where(function ($builder) use ($filters): void {
@@ -57,6 +77,31 @@ class ProductController extends Controller
 
         if ($filters['status']) {
             $query->where('status', $filters['status']);
+        }
+        if ($filters['stock']) {
+            $query->where(function ($builder) use ($filters) {
+                if ($filters['stock'] === 'available') {
+                    $builder->whereRaw('COALESCE(stock_totals.total_available, 0) > 0');
+                } elseif ($filters['stock'] === 'out') {
+                    $builder->whereRaw('COALESCE(stock_totals.total_available, 0) <= 0');
+                } elseif ($filters['stock'] === 'negative') {
+                    $builder->whereRaw('COALESCE(stock_totals.total_available, 0) < 0');
+                }
+            });
+        }
+
+        if ($filters['price_min'] !== null) {
+            $query->where(function ($builder) use ($filters): void {
+                $builder->whereNotNull('sale_price_net')
+                    ->where('sale_price_net', '>=', $filters['price_min']);
+            });
+        }
+
+        if ($filters['price_max'] !== null) {
+            $query->where(function ($builder) use ($filters): void {
+                $builder->whereNotNull('sale_price_net')
+                    ->where('sale_price_net', '<=', $filters['price_max']);
+            });
         }
 
         $products = $query
@@ -91,11 +136,11 @@ class ProductController extends Controller
                 'images' => $product->images,
                 'updated_at' => $product->updated_at?->toDateTimeString(),
                 'stock_summary' => [
-                    'total_on_hand' => (float) $product->warehouseStocks->sum('on_hand'),
-                    'total_reserved' => (float) $product->warehouseStocks->sum('reserved'),
-                    'total_incoming' => (float) $product->warehouseStocks->sum('incoming'),
-                    'total_available' => (float) $product->warehouseStocks
-                        ->sum(fn ($stock) => (float) $stock->on_hand - (float) $stock->reserved),
+                    'total_on_hand' => (float) ($product->total_on_hand ?? $product->warehouseStocks->sum('on_hand')),
+                    'total_reserved' => (float) ($product->total_reserved ?? $product->warehouseStocks->sum('reserved')),
+                    'total_incoming' => (float) ($product->total_incoming ?? $product->warehouseStocks->sum('incoming')),
+                    'total_available' => (float) ($product->total_available ?? $product->warehouseStocks
+                        ->sum(fn ($stock) => (float) $stock->on_hand - (float) $stock->reserved)),
                 ],
                 'stocks' => $product->warehouseStocks
                     ->map(fn ($stock) => [
