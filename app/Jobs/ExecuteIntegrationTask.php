@@ -113,7 +113,7 @@ class ExecuteIntegrationTask implements ShouldQueue
                 dispatch($job);
             }
 
-            $scheduler->scheduleNext($task);
+            $scheduler->updateNextRun($task);
         } catch (Throwable $exception) {
             $runService->fail($run, $exception->getMessage());
             throw $exception;

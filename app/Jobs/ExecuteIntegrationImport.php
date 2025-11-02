@@ -66,10 +66,10 @@ class ExecuteIntegrationImport implements ShouldQueue
                 if (count($currentChunk) >= $chunkSize) {
                     $chunkJobs[] = new ProcessIntegrationImportChunk(
                         $run->id,
-                        $profile->id,
                         $currentChunk,
                         $productMappings,
-                        $categoryMappings
+                        $categoryMappings,
+                        $profile->catalog_id
                     );
                     $currentChunk = [];
                 }
@@ -78,10 +78,10 @@ class ExecuteIntegrationImport implements ShouldQueue
             if (! empty($currentChunk)) {
                 $chunkJobs[] = new ProcessIntegrationImportChunk(
                     $run->id,
-                    $profile->id,
                     $currentChunk,
                     $productMappings,
-                    $categoryMappings
+                    $categoryMappings,
+                    $profile->catalog_id
                 );
             }
 

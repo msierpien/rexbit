@@ -32,12 +32,10 @@ function FilterSelect({ label, value, onChange, options, placeholder }) {
     );
 }
 
-function Pagination({ meta }) {
-    if (!meta?.links) {
-        return null;
-    }
-
-    return (
+    const Pagination = ({ meta }) => {
+        if (!meta?.links || meta.links.length <= 3) {
+            return null;
+        }        return (
         <nav className="mt-6 flex flex-wrap gap-2 text-sm">
             {meta.links.map((link, index) => (
                 <button

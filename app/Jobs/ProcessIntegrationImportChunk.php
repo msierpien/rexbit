@@ -3,10 +3,12 @@
 namespace App\Jobs;
 
 use App\Enums\ProductStatus;
+use App\Models\IntegrationImportRun;
 use App\Models\IntegrationTaskRun;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Notifications\IntegrationImportFinished;
+use App\Services\Integrations\Import\ImportRunService;
 use App\Services\Integrations\Import\ImportSchedulerService;
 use App\Services\Integrations\Tasks\TaskRunService;
 use Illuminate\Bus\Queueable;
@@ -31,16 +33,42 @@ class ProcessIntegrationImportChunk implements ShouldQueue
     ) {
     }
 
-    public function handle(TaskRunService $runService, ImportSchedulerService $scheduler): void
+    public function handle(
+        TaskRunService $taskRunService,
+        ImportRunService $importRunService,
+        ImportSchedulerService $scheduler
+    ): void
     {
         $run = IntegrationTaskRun::with(['task.integration.user'])->find($this->runId);
+        $isTaskRun = true;
+        $user = null;
+        $catalogId = null;
+        $scheduleTarget = null;
 
-        if (! $run || ! $run->task || ! $run->task->integration || ! $run->task->integration->user) {
+        if (! $run) {
+            $run = IntegrationImportRun::with(['profile.integration.user'])->find($this->runId);
+            $isTaskRun = false;
+        }
+
+        if (! $run) {
             return;
         }
 
-        $user = $run->task->integration->user;
-        $catalogId = $this->catalogId ?? $this->ensureCatalog($user)->id;
+        if ($isTaskRun) {
+            $user = $run->task?->integration?->user;
+            $scheduleTarget = $run->task;
+            $catalogId = $this->catalogId ?? $run->task?->catalog_id;
+        } else {
+            $user = $run->profile?->integration?->user;
+            $scheduleTarget = $run->profile;
+            $catalogId = $this->catalogId ?? $run->profile?->catalog_id;
+        }
+
+        if (! $user) {
+            return;
+        }
+
+        $catalogId = $catalogId ?? $this->ensureCatalog($user)->id;
 
         $processed = 0;
         $success = 0;
@@ -80,14 +108,25 @@ class ProcessIntegrationImportChunk implements ShouldQueue
             }
         }
 
-        $run = $runService->applyChunkResult(
-            $run,
-            $processed,
-            $success,
-            $failure,
-            $samples,
-            $errors
-        );
+        if ($isTaskRun) {
+            $run = $taskRunService->applyChunkResult(
+                $run,
+                $processed,
+                $success,
+                $failure,
+                $samples,
+                $errors
+            );
+        } else {
+            $run = $importRunService->applyChunkResult(
+                $run->id,
+                $processed,
+                $success,
+                $failure,
+                $samples,
+                $errors
+            );
+        }
 
         if (($run->meta['pending_chunks'] ?? 0) === 0) {
             if ($run->status === 'completed') {
@@ -97,28 +136,43 @@ class ProcessIntegrationImportChunk implements ShouldQueue
 
                 $run->forceFill(['message' => $run->message ?? $message])->save();
 
-                $run->task->forceFill(['last_fetched_at' => now()])->save();
+                if ($scheduleTarget) {
+                    $scheduleTarget->forceFill(['last_fetched_at' => now()])->save();
+                    $scheduler->updateNextRun($scheduleTarget);
+                }
 
-                $scheduler->updateNextRun($run->task);
-
-                $user->notify(new IntegrationImportFinished($run));
+                if ($user) {
+                    $user->notify(new IntegrationImportFinished($run));
+                }
             } elseif ($run->status === 'failed') {
-                $user->notify(new IntegrationImportFinished($run, false, $run->message));
+                if ($user) {
+                    $user->notify(new IntegrationImportFinished($run, false, $run->message));
+                }
             }
         }
     }
 
     public function failed(Throwable $exception): void
     {
-        $runService = app(TaskRunService::class);
+        $taskRunService = app(TaskRunService::class);
+        $importRunService = app(ImportRunService::class);
+
         $run = IntegrationTaskRun::with(['task.integration.user'])->find($this->runId);
+        $user = null;
 
         if ($run) {
-            $runService->fail($run, $exception->getMessage());
-            
-            if ($run->task && $run->task->integration && $run->task->integration->user) {
-                $run->task->integration->user->notify(new IntegrationImportFinished($run, false, $exception->getMessage()));
+            $taskRunService->fail($run, $exception->getMessage());
+            $user = $run->task?->integration?->user;
+        } else {
+            $run = IntegrationImportRun::with(['profile.integration.user'])->find($this->runId);
+            if ($run) {
+                $importRunService->fail($run, $exception->getMessage());
+                $user = $run->profile?->integration?->user;
             }
+        }
+
+        if ($run && $user) {
+            $user->notify(new IntegrationImportFinished($run, false, $exception->getMessage()));
         }
     }
 
@@ -298,6 +352,8 @@ class ProcessIntegrationImportChunk implements ShouldQueue
         $productData = [
             'name' => $name,
             'description' => Arr::get($productPayload, 'description'),
+            'ean' => Arr::get($productPayload, 'ean'),
+            'images' => $this->parseImages(Arr::get($productPayload, 'images')),
             'sale_price_net' => $this->parseDecimal(Arr::get($productPayload, 'sale_price_net')),
             'sale_vat_rate' => $this->parseInteger(Arr::get($productPayload, 'sale_vat_rate')),
             'purchase_price_net' => $this->parseDecimal(Arr::get($productPayload, 'purchase_price_net')),
@@ -344,6 +400,36 @@ class ProcessIntegrationImportChunk implements ShouldQueue
         }
 
         return is_numeric($value) ? (int) $value : null;
+    }
+
+    protected function parseImages($value): ?array
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        // Jeśli to już tablica, zwróć ją
+        if (is_array($value)) {
+            return array_filter($value, fn($img) => !empty($img));
+        }
+
+        // Jeśli to string, spróbuj sparsować jako JSON lub rozdziel po przecinkach
+        if (is_string($value)) {
+            // Spróbuj JSON
+            $json = json_decode($value, true);
+            if (is_array($json)) {
+                return array_filter($json, fn($img) => !empty($img));
+            }
+
+            // Spróbuj rozdzielić po przecinkach lub średnikach
+            $urls = preg_split('/[,;]/', $value);
+            $urls = array_map('trim', $urls);
+            $urls = array_filter($urls, fn($url) => !empty($url) && filter_var($url, FILTER_VALIDATE_URL));
+            
+            return !empty($urls) ? array_values($urls) : null;
+        }
+
+        return null;
     }
 
     protected function ensureCatalog($user)

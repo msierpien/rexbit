@@ -87,7 +87,19 @@ class ProductController extends Controller
             ]);
 
         return Inertia::render('Products/Index', [
-            'products' => $products,
+            'products' => [
+                'data' => $products->items(),
+                'meta' => [
+                    'current_page' => $products->currentPage(),
+                    'from' => $products->firstItem(),
+                    'last_page' => $products->lastPage(),
+                    'links' => $products->toArray()['links'],
+                    'path' => $products->path(),
+                    'per_page' => $products->perPage(),
+                    'to' => $products->lastItem(),
+                    'total' => $products->total(),
+                ],
+            ],
             'filters' => $filters,
             'options' => [
                 'catalogs' => $request->user()->productCatalogs()
