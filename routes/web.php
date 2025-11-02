@@ -77,6 +77,8 @@ Route::middleware(['auth', 'role:user,admin'])->group(function (): void {
     Route::post('/integrations/{integration}/import-profiles/{task}/mappings', [IntegrationTaskController::class, 'saveMappings'])
         ->name('integrations.import-profiles.mappings');
 
+    Route::get('/products/integrations/{integration}', [\App\Http\Controllers\ProductIntegrationController::class, 'show'])
+        ->name('products.integrations.show');
     Route::resource('/products', ProductController::class)
         ->names('products')
         ->except(['show']);

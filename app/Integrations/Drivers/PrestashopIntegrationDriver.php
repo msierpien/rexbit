@@ -32,6 +32,7 @@ class PrestashopIntegrationDriver implements IntegrationDriver
             'api_key' => $integration
                 ? ['nullable', 'string', 'min:8']
                 : ['required', 'string', 'min:8'],
+            'product_listing_enabled' => ['sometimes', 'boolean'],
         ];
     }
 
@@ -44,6 +45,7 @@ class PrestashopIntegrationDriver implements IntegrationDriver
             'description' => null,
             'base_url' => '',
             'api_key' => '',
+            'product_listing_enabled' => false,
         ];
     }
 
@@ -57,6 +59,10 @@ class PrestashopIntegrationDriver implements IntegrationDriver
         $normalized = [
             'description' => Arr::get($config, 'description'),
             'base_url' => $baseUrl,
+            'product_listing_enabled' => filter_var(
+                Arr::get($config, 'product_listing_enabled', false),
+                FILTER_VALIDATE_BOOL
+            ),
         ];
 
         if (Arr::has($config, 'api_key')) {

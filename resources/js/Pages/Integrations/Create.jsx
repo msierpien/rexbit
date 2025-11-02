@@ -12,6 +12,7 @@ import {
 import { Button } from '@/components/ui/button.jsx';
 import { Input } from '@/components/ui/input.jsx';
 import { Textarea } from '@/components/ui/textarea.jsx';
+import { Checkbox } from '@/components/ui/checkbox.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert.jsx';
 import { Store, Layers3, ShieldCheck } from 'lucide-react';
@@ -49,13 +50,26 @@ function TypeOption({ type, isActive, onSelect }) {
 }
 
 function FieldInput({ field, value, onChange, error }) {
-    const commonProps = {
-        id: field.name,
-        value: value ?? '',
-        onChange,
-        required: field.required,
-        placeholder: field.placeholder,
-    };
+    if (field.type === 'checkbox') {
+        const checked = Boolean(value);
+
+        return (
+            <div className="space-y-2">
+                <div className="flex items-center gap-3">
+                    <Checkbox
+                        id={field.name}
+                        checked={checked}
+                        onChange={(event) => onChange(event.target.checked)}
+                    />
+                    <label htmlFor={field.name} className="text-sm font-medium text-foreground">
+                        {field.label}
+                    </label>
+                </div>
+                {field.helper && <p className="pl-7 text-xs text-muted-foreground">{field.helper}</p>}
+                {error && <p className="pl-7 text-xs text-red-600">{error}</p>}
+            </div>
+        );
+    }
 
     if (field.type === 'textarea') {
         return (
@@ -63,7 +77,14 @@ function FieldInput({ field, value, onChange, error }) {
                 <label htmlFor={field.name} className="text-sm font-medium text-foreground">
                     {field.label}
                 </label>
-                <Textarea rows={4} {...commonProps} />
+                <Textarea
+                    id={field.name}
+                    rows={4}
+                    value={value ?? ''}
+                    onChange={(event) => onChange(event.target.value)}
+                    required={field.required}
+                    placeholder={field.placeholder}
+                />
                 {field.helper && <p className="text-xs text-muted-foreground">{field.helper}</p>}
                 {error && <p className="text-xs text-red-600">{error}</p>}
             </div>
@@ -75,7 +96,14 @@ function FieldInput({ field, value, onChange, error }) {
             <label htmlFor={field.name} className="text-sm font-medium text-foreground">
                 {field.label}
             </label>
-            <Input type={field.type ?? 'text'} {...commonProps} />
+            <Input
+                id={field.name}
+                type={field.type ?? 'text'}
+                value={value ?? ''}
+                onChange={(event) => onChange(event.target.value)}
+                required={field.required}
+                placeholder={field.placeholder}
+            />
             {field.helper && <p className="text-xs text-muted-foreground">{field.helper}</p>}
             {error && <p className="text-xs text-red-600">{error}</p>}
         </div>
@@ -208,13 +236,13 @@ function IntegrationsCreate() {
                             {activeFields.length > 0 ? (
                                 <div className="space-y-5">
                                     {activeFields.map((field) => (
-                                        <FieldInput
-                                            key={field.name}
-                                            field={field}
-                                            value={data[field.name]}
-                                            onChange={(event) => setData(field.name, event.target.value)}
-                                            error={errors?.[field.name]}
-                                        />
+                            <FieldInput
+                                key={field.name}
+                                field={field}
+                                value={data[field.name]}
+                                onChange={(nextValue) => setData(field.name, nextValue)}
+                                error={errors?.[field.name]}
+                            />
                                     ))}
                                 </div>
                             ) : (

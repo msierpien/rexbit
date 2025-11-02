@@ -167,6 +167,7 @@ class IntegrationController extends Controller
                     'config' => [
                         'base_url' => Arr::get($integration->config, 'base_url'),
                         'description' => Arr::get($integration->config, 'description'),
+                        'product_listing_enabled' => Arr::get($integration->config, 'product_listing_enabled', false),
                     ],
                     'timestamps' => [
                         'created_at' => $integration->created_at?->toDateTimeString(),
@@ -313,6 +314,13 @@ class IntegrationController extends Controller
                         ? 'Pozostaw puste, aby zachować obecny klucz API.'
                         : 'Klucz API wygenerowany w panelu Prestashop (Uprawnienia: GET/POST).',
                 ],
+                [
+                    'name' => 'product_listing_enabled',
+                    'label' => 'Udostępnij listę produktów',
+                    'type' => 'checkbox',
+                    'helper' => 'Po zaznaczeniu integracja udostępnia listę produktów w module Prestashop.',
+                    'default' => false,
+                ],
             ],
             IntegrationType::CSV_XML_IMPORT => [],
         };
@@ -324,6 +332,7 @@ class IntegrationController extends Controller
             IntegrationType::PRESTASHOP => [
                 'base_url' => '',
                 'api_key' => '',
+                'product_listing_enabled' => false,
             ],
             IntegrationType::CSV_XML_IMPORT => [],
         };

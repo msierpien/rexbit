@@ -170,4 +170,16 @@ class IntegrationService
 
         return $driver->sanitizeConfig($config);
     }
+
+    /**
+     * Retrieve sanitized configuration with decrypted secrets for runtime usage.
+     *
+     * @return array<string, mixed>
+     */
+    public function runtimeConfig(Integration $integration): array
+    {
+        $driver = $this->driver($integration->type);
+
+        return $this->decryptConfigForRuntime($integration, $driver);
+    }
 }

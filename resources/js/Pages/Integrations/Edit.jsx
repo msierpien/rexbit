@@ -100,13 +100,17 @@ function IntegrationSummaryCard({ integration, onTest, onDelete, testing, deleti
 }
 
 function ConfigForm({ integration, fields, errors }) {
-    const initialConfig = fields.reduce(
-        (carry, field) => ({
+    const initialConfig = fields.reduce((carry, field) => {
+        const defaultValue =
+            field.default ?? (field.type === 'checkbox' ? false : '');
+        const currentValue = integration.config?.[field.name];
+
+        return {
             ...carry,
-            [field.name]: integration.config?.[field.name] ?? '',
-        }),
-        {},
-    );
+            [field.name]:
+                currentValue !== undefined ? currentValue : defaultValue,
+        };
+    }, {});
 
     const configForm = useForm({
         name: integration.name ?? '',
@@ -161,29 +165,66 @@ function ConfigForm({ integration, fields, errors }) {
 
                     {fields.length > 0 && (
                         <div className="space-y-4">
-                            {fields.map((field) => (
-                                <div key={field.name} className="space-y-2">
-                                    <label htmlFor={`field-${field.name}`} className="text-sm font-medium text-foreground">
-                                        {field.label}
-                                    </label>
-                                    <Input
-                                        id={`field-${field.name}`}
-                                        type={field.type ?? 'text'}
-                                        value={configForm.data[field.name] ?? ''}
-                                        onChange={(event) => configForm.setData(field.name, event.target.value)}
-                                        placeholder={field.placeholder}
-                                        required={field.required}
-                                    />
-                                    {field.helper && (
-                                        <p className="text-xs text-muted-foreground">{field.helper}</p>
-                                    )}
-                                    {(configForm.errors[field.name] || errors?.[field.name]) && (
-                                        <p className="text-xs text-red-600">
-                                            {configForm.errors[field.name] ?? errors[field.name]}
-                                        </p>
-                                    )}
-                                </div>
-                            ))}
+                            {fields.map((field) => {
+                                if (field.type === 'checkbox') {
+                                    const checked = Boolean(configForm.data[field.name]);
+
+                                    return (
+                                        <div key={field.name} className="space-y-2">
+                                            <div className="flex items-center gap-3">
+                                                <Checkbox
+                                                    id={`field-${field.name}`}
+                                                    checked={checked}
+                                                    onChange={(event) =>
+                                                        configForm.setData(field.name, event.target.checked)
+                                                    }
+                                                />
+                                                <label
+                                                    htmlFor={`field-${field.name}`}
+                                                    className="text-sm font-medium text-foreground"
+                                                >
+                                                    {field.label}
+                                                </label>
+                                            </div>
+                                            {field.helper && (
+                                                <p className="pl-7 text-xs text-muted-foreground">{field.helper}</p>
+                                            )}
+                                            {(configForm.errors[field.name] || errors?.[field.name]) && (
+                                                <p className="pl-7 text-xs text-red-600">
+                                                    {configForm.errors[field.name] ?? errors[field.name]}
+                                                </p>
+                                            )}
+                                        </div>
+                                    );
+                                }
+
+                                return (
+                                    <div key={field.name} className="space-y-2">
+                                        <label
+                                            htmlFor={`field-${field.name}`}
+                                            className="text-sm font-medium text-foreground"
+                                        >
+                                            {field.label}
+                                        </label>
+                                        <Input
+                                            id={`field-${field.name}`}
+                                            type={field.type ?? 'text'}
+                                            value={configForm.data[field.name] ?? ''}
+                                            onChange={(event) => configForm.setData(field.name, event.target.value)}
+                                            placeholder={field.placeholder}
+                                            required={field.required}
+                                        />
+                                        {field.helper && (
+                                            <p className="text-xs text-muted-foreground">{field.helper}</p>
+                                        )}
+                                        {(configForm.errors[field.name] || errors?.[field.name]) && (
+                                            <p className="text-xs text-red-600">
+                                                {configForm.errors[field.name] ?? errors[field.name]}
+                                            </p>
+                                        )}
+                                    </div>
+                                );
+                            })}
                         </div>
                     )}
                 </CardContent>

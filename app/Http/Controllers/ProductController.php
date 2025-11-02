@@ -3,12 +3,15 @@
 namespace App\Http\Controllers;
 
 use App\Enums\ProductStatus;
+use App\Enums\IntegrationType;
 use App\Models\Product;
 use App\Models\WarehouseDocumentItem;
+use App\Models\Integration;
 use App\Services\Catalog\ProductService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use Illuminate\Support\Arr;
 use Inertia\Inertia;
 use Inertia\Response;
 use Illuminate\Support\Facades\DB;
@@ -126,6 +129,18 @@ class ProductController extends Controller
             $query->orderByDesc('products.updated_at');
         }
 
+        $integrationOptions = $request->user()->integrations()
+            ->where('type', IntegrationType::PRESTASHOP->value)
+            ->orderBy('name')
+            ->get()
+            ->filter(fn (Integration $integration) => (bool) Arr::get($integration->config, 'product_listing_enabled', false))
+            ->map(fn (Integration $integration) => [
+                'id' => $integration->id,
+                'name' => $integration->name,
+                'type' => $integration->type->value,
+            ])
+            ->values();
+
         $products = $query
             ->paginate(max(1, $filters['per_page']))
             ->withQueryString()
@@ -216,6 +231,7 @@ class ProductController extends Controller
             'can' => [
                 'create' => $request->user()->can('create', Product::class),
             ],
+            'integrationOptions' => $integrationOptions,
         ]);
     }
 
