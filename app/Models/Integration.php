@@ -51,6 +51,11 @@ class Integration extends Model
         return $this->hasMany(IntegrationTask::class);
     }
 
+    public function productLinks(): HasMany
+    {
+        return $this->hasMany(IntegrationProductLink::class);
+    }
+
     // Backward compatibility alias
     public function importProfiles(): HasMany
     {

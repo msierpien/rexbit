@@ -17,6 +17,7 @@ export default function SelectionToolbar({
     onClearSelection,
     onBulkStatus,
     onBulkCategory,
+    additionalActions = null,
 }) {
     return (
         <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -61,6 +62,7 @@ export default function SelectionToolbar({
                 >
                     Przypisz kategorię
                 </Button>
+                {additionalActions}
             </div>
         </div>
     );

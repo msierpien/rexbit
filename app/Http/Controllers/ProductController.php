@@ -54,6 +54,7 @@ class ProductController extends Controller
             'catalog',
             'manufacturer',
             'warehouseStocks.warehouse',
+            'integrationLinks.integration:id,name',
         ]);
         $stockTotals = DB::table('warehouse_stock_totals')
             ->select('product_id')
@@ -147,6 +148,15 @@ class ProductController extends Controller
             ->through(fn (Product $product) => [
                 'id' => $product->id,
                 'name' => $product->name,
+                'is_linked' => $product->integrationLinks->isNotEmpty(),
+                'integration_links' => $product->integrationLinks->map(fn ($link) => [
+                    'id' => $link->id,
+                    'integration_id' => $link->integration_id,
+                    'integration_name' => $link->integration?->name,
+                    'external_product_id' => $link->external_product_id,
+                    'matched_by' => $link->matched_by,
+                    'is_manual' => $link->is_manual,
+                ])->values(),
                 'slug' => $product->slug,
                 'sku' => $product->sku,
                 'ean' => $product->ean,

@@ -82,6 +82,11 @@ class Product extends Model
         return $this->hasMany(WarehouseStockTotal::class);
     }
 
+    public function integrationLinks(): HasMany
+    {
+        return $this->hasMany(IntegrationProductLink::class);
+    }
+
     /**
      * Get stock for specific warehouse
      */

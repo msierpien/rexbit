@@ -1,4 +1,4 @@
-import { ArrowUpDown, ChevronDown, ChevronUp, Pencil, Trash2 } from 'lucide-react';
+import { ArrowUpDown, ChevronDown, ChevronUp, Pencil, Trash2, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
 
@@ -31,24 +31,34 @@ export default function ProductsTable({
     onOpenStockHistory,
     onEdit,
     onDelete,
+    enableSelection = true,
+    rowOffset = 0,
 }) {
     const isColumnVisible = (key) => columnVisibility[key] !== false;
+    const allowStockHistory = typeof onOpenStockHistory === 'function';
+    const allowEdit = typeof onEdit === 'function';
+    const allowDelete = typeof onDelete === 'function';
+    const showActionsColumn = isColumnVisible('actions');
 
     return (
         <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200 text-sm">
                 <thead className="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
                     <tr>
-                        <th className="px-4 py-3">
-                            <input
-                                ref={pageCheckboxRef}
-                                type="checkbox"
-                                checked={allPageSelected}
-                                onChange={(event) => onTogglePage(event.target.checked)}
-                                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                aria-checked={somePageSelected ? 'mixed' : allPageSelected}
-                            />
-                        </th>
+                        {enableSelection ? (
+                            <th className="px-4 py-3">
+                                <input
+                                    ref={pageCheckboxRef}
+                                    type="checkbox"
+                                    checked={allPageSelected}
+                                    onChange={(event) => onTogglePage(event.target.checked)}
+                                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                    aria-checked={somePageSelected ? 'mixed' : allPageSelected}
+                                />
+                            </th>
+                        ) : (
+                            <th className="px-4 py-3 text-muted-foreground">#</th>
+                        )}
                         {isColumnVisible('id') && (
                             <th className="px-4 py-3">
                                 <button
@@ -111,20 +121,27 @@ export default function ProductsTable({
                             </th>
                         )}
                         {isColumnVisible('status') && <th className="px-4 py-3">Status</th>}
-                        {isColumnVisible('actions') && <th className="px-4 py-3 text-right">Akcje</th>}
+                        {showActionsColumn && <th className="px-4 py-3 text-right">Akcje</th>}
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
-                    {products.map((product) => (
-                        <tr key={product.id} className="hover:bg-gray-50">
-                            <td className="px-4 py-3">
-                                <input
-                                    type="checkbox"
-                                    checked={isRowSelected(product.id)}
-                                    onChange={(event) => onToggleRow(product.id, event.target.checked)}
-                                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                />
-                            </td>
+                    {products.map((product, index) => {
+                        const rowSelected = enableSelection ? isRowSelected(product.id) : false;
+
+                        return (
+                            <tr key={product.id} className="hover:bg-gray-50">
+                            {enableSelection ? (
+                                <td className="px-4 py-3">
+                                    <input
+                                        type="checkbox"
+                                        checked={rowSelected}
+                                        onChange={(event) => onToggleRow(product.id, event.target.checked)}
+                                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                    />
+                                </td>
+                            ) : (
+                                <td className="px-4 py-3 text-muted-foreground">{rowOffset + index + 1}</td>
+                            )}
                             {isColumnVisible('id') && <td className="px-4 py-3 text-gray-600">{product.id}</td>}
                             <td className="px-4 py-3">
                                 <div className="flex items-center gap-3">
@@ -144,7 +161,12 @@ export default function ProductsTable({
                                         </div>
                                     )}
                                     <div>
-                                        <div className="font-semibold text-gray-900">{product.name}</div>
+                                        <div className="flex items-center gap-2 font-semibold text-gray-900">
+                                            <span>{product.name}</span>
+                                            {product.is_linked && (
+                                                <CheckCircle2 className="h-4 w-4 text-emerald-500" aria-hidden />
+                                            )}
+                                        </div>
                                         <div className="flex flex-wrap gap-3 text-xs text-gray-500">
                                             {product.sku && <span>SKU: {product.sku}</span>}
                                             {product.ean && <span>EAN: {product.ean}</span>}
@@ -212,14 +234,16 @@ export default function ProductsTable({
                                             <span className="text-xs text-gray-400">Brak danych</span>
                                         )}
                                     </div>
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="mt-2"
-                                        onClick={() => onOpenStockHistory(product)}
-                                    >
-                                        Historia
-                                    </Button>
+                                    {allowStockHistory && (
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="mt-2"
+                                            onClick={() => onOpenStockHistory(product)}
+                                        >
+                                            Historia
+                                        </Button>
+                                    )}
                                 </td>
                             )}
                             {isColumnVisible('price') && (
@@ -232,35 +256,44 @@ export default function ProductsTable({
                                     </Badge>
                                 </td>
                             )}
-                            {isColumnVisible('actions') && (
+                            {showActionsColumn && (
                                 <td className="px-4 py-3 text-right">
-                                    <div className="flex justify-end gap-2">
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="icon"
-                                            onClick={() => onEdit(product)}
-                                            title="Edytuj produkt"
-                                        >
-                                            <Pencil className="h-4 w-4" />
-                                            <span className="sr-only">Edytuj</span>
-                                        </Button>
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="icon"
-                                            className="text-destructive hover:text-destructive"
-                                            onClick={() => onDelete(product)}
-                                            title="Usuń produkt"
-                                        >
-                                            <Trash2 className="h-4 w-4" />
-                                            <span className="sr-only">Usuń</span>
-                                        </Button>
-                                    </div>
+                                    {(allowEdit || allowDelete) ? (
+                                        <div className="flex justify-end gap-2">
+                                            {allowEdit && (
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    onClick={() => onEdit(product)}
+                                                    title="Edytuj produkt"
+                                                >
+                                                    <Pencil className="h-4 w-4" />
+                                                    <span className="sr-only">Edytuj</span>
+                                                </Button>
+                                            )}
+                                            {allowDelete && (
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="text-destructive hover:text-destructive"
+                                                    onClick={() => onDelete(product)}
+                                                    title="Usuń produkt"
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
+                                                    <span className="sr-only">Usuń</span>
+                                                </Button>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <span className="text-xs text-muted-foreground">—</span>
+                                    )}
                                 </td>
                             )}
                         </tr>
-                    ))}
+                    );
+                    })}
                 </tbody>
             </table>
         </div>

@@ -45,8 +45,13 @@ export default function ProductsFilters({
     perPage,
     perPageOptions,
     onPerPageChange,
+    sourceOptions = [],
+    sourceValue = 'local',
+    onSourceChange,
     actions,
 }) {
+    const showSourceSelect = sourceOptions.length > 1 && typeof onSourceChange === 'function';
+
     return (
         <div className="flex flex-col gap-4 rounded-xl bg-white p-6 shadow-sm ring-1 ring-gray-100">
             <div className="grid gap-4 lg:grid-cols-4">
@@ -125,6 +130,17 @@ export default function ProductsFilters({
                     options={categoryOptions}
                     placeholder={categoryOptions.length ? 'Wszystkie kategorie' : 'Brak kategorii'}
                 />
+                {showSourceSelect ? (
+                    <FilterSelect
+                        label="Źródło danych"
+                        value={sourceValue}
+                        onChange={onSourceChange}
+                        options={sourceOptions}
+                        placeholder="Wybierz źródło"
+                    />
+                ) : (
+                    <span className="hidden lg:block" />
+                )}
                 <label className="flex flex-col gap-1 text-sm text-gray-700">
                     <span>Na stronie</span>
                     <select

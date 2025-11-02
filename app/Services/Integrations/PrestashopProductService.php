@@ -44,28 +44,7 @@ class PrestashopProductService
             $query['filter[name]'] = sprintf('[%%%s%%]', $filters['search']);
         }
 
-        try {
-            $response = Http::withBasicAuth($config['api_key'] ?? '', '')
-                ->acceptJson()
-                ->timeout(15)
-                ->get($this->endpoint($config['base_url'] ?? '') . '/products', $query);
-
-            if ($response->failed()) {
-                $response->throw();
-            }
-        } catch (RequestException $exception) {
-            throw new IntegrationConnectionException(
-                'Nie udało się pobrać produktów z Prestashop: ' . $exception->getMessage(),
-                (int) $exception->getCode(),
-                $exception
-            );
-        } catch (\Throwable $exception) {
-            throw new IntegrationConnectionException(
-                'Wystąpił błąd podczas komunikacji z Prestashop: ' . $exception->getMessage(),
-                (int) $exception->getCode(),
-                $exception
-            );
-        }
+        $response = $this->performProductRequest($config, $query);
 
         $items = Arr::get($response->json(), 'products', []);
 
@@ -214,6 +193,50 @@ class PrestashopProductService
         return null;
     }
 
+    public function findProductBySkuOrEan(Integration $integration, ?string $sku, ?string $ean): ?array
+    {
+        if ($integration->type !== IntegrationType::PRESTASHOP) {
+            throw new \InvalidArgumentException('Nieobsługiwany typ integracji dla wyszukiwania produktu.');
+        }
+
+        $config = $this->integrationService->runtimeConfig($integration);
+
+        $candidates = [];
+
+        if ($sku) {
+            $candidates[] = [
+                'filter[reference]' => sprintf('[%s]', $sku),
+                'limit' => '0,1',
+            ];
+        }
+
+        if ($ean) {
+            $candidates[] = [
+                'filter[ean13]' => sprintf('[%s]', $ean),
+                'limit' => '0,1',
+            ];
+        }
+
+        foreach ($candidates as $query) {
+            $response = $this->performProductRequest($config, array_merge([
+                'output_format' => 'JSON',
+                'display' => 'full',
+            ], $query));
+
+            $items = Arr::get($response->json(), 'products', []);
+
+            if (empty($items)) {
+                continue;
+            }
+
+            $payload = $items[0];
+
+            return $this->mapProduct($payload, $config);
+        }
+
+        return null;
+    }
+
     protected function resolveTotal(?string $header, array $items, int $page, int $perPage): ?int
     {
         if ($header !== null && $header !== '') {
@@ -225,5 +248,36 @@ class PrestashopProductService
         }
 
         return null;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    protected function performProductRequest(array $config, array $query)
+    {
+        try {
+            $response = Http::withBasicAuth($config['api_key'] ?? '', '')
+                ->acceptJson()
+                ->timeout(10)
+                ->get($this->endpoint($config['base_url'] ?? '') . '/products', $query);
+
+            if ($response->failed()) {
+                $response->throw();
+            }
+
+            return $response;
+        } catch (RequestException $exception) {
+            throw new IntegrationConnectionException(
+                'Nie udało się pobrać danych z Prestashop: ' . $exception->getMessage(),
+                (int) $exception->getCode(),
+                $exception
+            );
+        } catch (\Throwable $exception) {
+            throw new IntegrationConnectionException(
+                'Wystąpił błąd podczas komunikacji z Prestashop: ' . $exception->getMessage(),
+                (int) $exception->getCode(),
+                $exception
+            );
+        }
     }
 }

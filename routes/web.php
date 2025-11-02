@@ -79,6 +79,10 @@ Route::middleware(['auth', 'role:user,admin'])->group(function (): void {
 
     Route::get('/products/integrations/{integration}', [\App\Http\Controllers\ProductIntegrationController::class, 'show'])
         ->name('products.integrations.show');
+    Route::post('/products/integrations/{integration}/links', [\App\Http\Controllers\ProductIntegrationLinkController::class, 'store'])
+        ->name('products.integrations.links.store');
+    Route::put('/products/integrations/{integration}/links/{link}', [\App\Http\Controllers\ProductIntegrationLinkController::class, 'update'])
+        ->name('products.integrations.links.update');
     Route::resource('/products', ProductController::class)
         ->names('products')
         ->except(['show']);
