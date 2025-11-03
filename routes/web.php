@@ -5,6 +5,7 @@ use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\AdminDashboardController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ContractorController;
+use App\Http\Controllers\InventoryCountController;
 use App\Http\Controllers\IntegrationImportProfileController;
 use App\Http\Controllers\IntegrationTaskController;
 use App\Http\Controllers\IntegrationTaskRunController;
@@ -121,6 +122,26 @@ Route::middleware(['auth', 'role:user,admin'])->group(function (): void {
     Route::resource('/warehouse/contractors', ContractorController::class)
         ->names('warehouse.contractors')
         ->except(['show']);
+
+    // Inventory Count routes
+    Route::resource('/inventory-counts', \App\Http\Controllers\InventoryCountController::class)
+        ->names('inventory-counts');
+    
+    // Inventory Count status management routes
+    Route::post('/inventory-counts/{inventory_count}/start', [\App\Http\Controllers\InventoryCountController::class, 'start'])
+        ->name('inventory-counts.start');
+    Route::post('/inventory-counts/{inventory_count}/complete', [\App\Http\Controllers\InventoryCountController::class, 'complete'])
+        ->name('inventory-counts.complete');
+    Route::post('/inventory-counts/{inventory_count}/approve', [\App\Http\Controllers\InventoryCountController::class, 'approve'])
+        ->name('inventory-counts.approve');
+    Route::post('/inventory-counts/{inventory_count}/cancel', [\App\Http\Controllers\InventoryCountController::class, 'cancel'])
+        ->name('inventory-counts.cancel');
+    
+    // API endpoints for scanner integration
+    Route::post('/inventory-counts/find-product-by-ean', [\App\Http\Controllers\InventoryCountController::class, 'findProductByEan'])
+        ->name('inventory-counts.find-product-by-ean');
+    Route::post('/inventory-counts/{inventory_count}/update-quantity', [\App\Http\Controllers\InventoryCountController::class, 'updateQuantity'])
+        ->name('inventory-counts.update-quantity');
 });
 
 Route::middleware(['auth', 'role:admin'])->group(function (): void {

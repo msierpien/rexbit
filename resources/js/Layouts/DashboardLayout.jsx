@@ -31,6 +31,12 @@ const NAVIGATION_GROUPS = [
                 roles: ['admin', 'user'],
             },
             {
+                label: 'Inwentaryzacje',
+                href: '/inventory-counts',
+                match: ['/inventory-counts'],
+                roles: ['admin', 'user'],
+            },
+            {
                 label: 'Dostawy',
                 href: '/warehouse/deliveries',
                 match: ['/warehouse/deliveries'],

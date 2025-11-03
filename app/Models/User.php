@@ -128,6 +128,11 @@ class User extends Authenticatable
         return $this->hasMany(WarehouseDocumentSetting::class);
     }
 
+    public function inventoryCounts(): HasMany
+    {
+        return $this->hasMany(InventoryCount::class);
+    }
+
     public function integrationTaskRuns()
     {
         return IntegrationTaskRun::query()
