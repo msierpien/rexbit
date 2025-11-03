@@ -2,6 +2,7 @@ import { Link, router, usePage, Head } from '@inertiajs/react';
 import { useMemo, useState } from 'react';
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion.jsx';
 import { Button } from '@/components/ui/button.jsx';
+import { Toaster } from 'sonner';
 
 const NAVIGATION_GROUPS = [
     {
@@ -192,6 +193,7 @@ export default function DashboardLayout({ title, children }) {
                     </main>
                 </div>
             </div>
+            <Toaster position="top-right" richColors />
         </div>
     );
 }

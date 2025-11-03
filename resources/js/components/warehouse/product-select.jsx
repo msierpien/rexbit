@@ -96,6 +96,7 @@ export function ProductSelect({ products, value, onChange, placeholder = "Wyszuk
                             onChange={(e) => setSearchQuery(e.target.value)}
                             onFocus={handleInputFocus}
                             placeholder={placeholder}
+                            data-scanner-input="true"
                             className="w-full rounded-md border border-gray-300 pl-10 pr-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
                         />
                     </div>
