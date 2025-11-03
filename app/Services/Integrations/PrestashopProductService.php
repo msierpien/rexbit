@@ -289,19 +289,253 @@ class PrestashopProductService
 
         $config = $this->integrationService->runtimeConfig($integration);
 
-        $response = $this->performProductRequest($config, [
-            'output_format' => 'JSON',
-            'display' => 'full',
-            'filter[id]' => sprintf('[%s]', $externalProductId),
-            'limit' => '0,1',
-        ]);
+        try {
+            // Pobierz stock_available_id z produktu
+            $response = $this->performProductRequest($config, [
+                'output_format' => 'JSON',
+                'display' => 'full',
+                'filter[id]' => sprintf('[%s]', $externalProductId),
+                'limit' => '0,1',
+            ]);
 
-        $items = Arr::get($response->json(), 'products', []);
+            $items = Arr::get($response->json(), 'products', []);
 
-        if (empty($items)) {
+            if (empty($items)) {
+                return null;
+            }
+
+            $stockAvailableId = Arr::get($items[0], 'associations.stock_availables.0.id');
+
+            if (!$stockAvailableId) {
+                // Fallback do quantity z products jeśli brak stock_available
+                return (float) Arr::get($items[0], 'quantity', 0);
+            }
+
+            // Pobierz stock_available
+            $stockResponse = Http::withBasicAuth($config['api_key'], '')
+                ->acceptJson()
+                ->timeout(30)
+                ->get($this->endpoint($config['base_url']) . "/stock_availables/{$stockAvailableId}", [
+                    'output_format' => 'JSON',
+                ]);
+
+            if ($stockResponse->failed()) {
+                return (float) Arr::get($items[0], 'quantity', 0);
+            }
+
+            $stockData = Arr::get($stockResponse->json(), 'stock_available', []);
+
+            return (float) Arr::get($stockData, 'quantity', 0);
+        } catch (\Exception $e) {
+            \Log::error('Failed to fetch Prestashop stock', [
+                'product_id' => $externalProductId,
+                'error' => $e->getMessage(),
+            ]);
+
             return null;
         }
+    }
 
-        return (float) Arr::get($items[0], 'quantity', 0);
+    /**
+     * Update product stock in Prestashop
+     *
+     * @param Integration $integration
+     * @param string $externalProductId
+     * @param float $quantity
+     * @return array{success: bool, error?: string, stock_available_id?: int}
+     */
+    public function updateProductStock(Integration $integration, string $externalProductId, float $quantity): array
+    {
+        if ($integration->type !== IntegrationType::PRESTASHOP) {
+            throw new \InvalidArgumentException('Nieobsługiwany typ integracji dla aktualizacji stanów.');
+        }
+
+        $config = $this->integrationService->runtimeConfig($integration);
+
+        try {
+            // Krok 1: Pobierz stock_available_id z produktu
+            $response = $this->performProductRequest($config, [
+                'output_format' => 'JSON',
+                'display' => 'full',
+                'filter[id]' => sprintf('[%s]', $externalProductId),
+                'limit' => '0,1',
+            ]);
+
+            $items = Arr::get($response->json(), 'products', []);
+
+            if (empty($items)) {
+                return [
+                    'success' => false,
+                    'error' => "Product {$externalProductId} not found in Prestashop",
+                ];
+            }
+
+            $stockAvailableId = Arr::get($items[0], 'associations.stock_availables.0.id');
+
+            if (!$stockAvailableId) {
+                return [
+                    'success' => false,
+                    'error' => "No stock_available found for product {$externalProductId}",
+                ];
+            }
+
+            // Krok 2: Pobierz pełny XML stock_available
+            $stockXmlResponse = Http::withBasicAuth($config['api_key'], '')
+                ->timeout(30)
+                ->get($this->endpoint($config['base_url']) . "/stock_availables/{$stockAvailableId}");
+
+            if ($stockXmlResponse->failed()) {
+                return [
+                    'success' => false,
+                    'error' => 'Failed to fetch stock_available XML: ' . $stockXmlResponse->body(),
+                ];
+            }
+
+            // Krok 3: Parsuj i zaktualizuj quantity w XML używając DOM
+            libxml_use_internal_errors(true);
+            
+            $dom = new \DOMDocument();
+            $dom->preserveWhiteSpace = false;
+            $dom->formatOutput = false;
+            $dom->loadXML($stockXmlResponse->body());
+            
+            if (!$dom) {
+                $errors = libxml_get_errors();
+                libxml_clear_errors();
+                return [
+                    'success' => false,
+                    'error' => 'Invalid XML response: ' . json_encode($errors),
+                ];
+            }
+
+            // Znajdź i zaktualizuj quantity
+            $quantityNode = $dom->getElementsByTagName('quantity')->item(0);
+            if ($quantityNode) {
+                // Usuń wszystkie child nodes (włącznie z CDATA)
+                while ($quantityNode->firstChild) {
+                    $quantityNode->removeChild($quantityNode->firstChild);
+                }
+                // Dodaj nowy text node (NIE CDATA)
+                $textNode = $dom->createTextNode((string)(int) $quantity);
+                $quantityNode->appendChild($textNode);
+            }
+            
+            // Znajdź i zaktualizuj out_of_stock
+            $outOfStockNode = $dom->getElementsByTagName('out_of_stock')->item(0);
+            if ($outOfStockNode) {
+                // Usuń wszystkie child nodes (włącznie z CDATA)
+                while ($outOfStockNode->firstChild) {
+                    $outOfStockNode->removeChild($outOfStockNode->firstChild);
+                }
+                // Dodaj nowy text node (NIE CDATA)
+                $textNode = $dom->createTextNode((string)((int) $quantity > 0 ? 0 : 1));
+                $outOfStockNode->appendChild($textNode);
+            }
+
+            // Konwertuj z powrotem do XML
+            $xmlString = $dom->saveXML();
+
+            // Krok 4: Wyślij PUT request z zaktualizowanym XML
+            $updateResponse = Http::withBasicAuth($config['api_key'], '')
+                ->withBody($xmlString, 'application/xml; charset=UTF-8')
+                ->timeout(30)
+                ->put($this->endpoint($config['base_url']) . "/stock_availables/{$stockAvailableId}");
+                
+            if ($updateResponse->failed()) {
+                return [
+                    'success' => false,
+                    'error' => 'Failed to update stock_available: ' . $updateResponse->body(),
+                ];
+            }
+
+            return [
+                'success' => true,
+                'stock_available_id' => (int) $stockAvailableId,
+            ];
+        } catch (RequestException $e) {
+            \Log::error('Prestashop stock update failed - Request exception', [
+                'product_id' => $externalProductId,
+                'quantity' => $quantity,
+                'error' => $e->getMessage(),
+                'response' => $e->response?->body(),
+            ]);
+
+            return [
+                'success' => false,
+                'error' => 'Request failed: ' . $e->getMessage(),
+            ];
+        } catch (\Exception $e) {
+            \Log::error('Prestashop stock update failed', [
+                'product_id' => $externalProductId,
+                'quantity' => $quantity,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'error' => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Update multiple product stocks in Prestashop using batch operations
+     *
+     * @param Integration $integration
+     * @param array<string, float> $updates Map of external_product_id => quantity
+     * @return array{success: int, failed: int, errors: array}
+     */
+    public function updateProductStockBatch(Integration $integration, array $updates): array
+    {
+        if ($integration->type !== IntegrationType::PRESTASHOP) {
+            throw new \InvalidArgumentException('Nieobsługiwany typ integracji dla aktualizacji stanów.');
+        }
+
+        $results = [
+            'success' => 0,
+            'failed' => 0,
+            'errors' => [],
+        ];
+
+        // Prestashop API nie wspiera prawdziwych batch updates,
+        // więc używamy concurrent requests z rate limiting
+        $config = $this->integrationService->runtimeConfig($integration);
+        
+        // Limit 10 concurrent requests
+        $chunks = array_chunk($updates, 10, true);
+        
+        foreach ($chunks as $chunk) {
+            $promises = [];
+            
+            foreach ($chunk as $externalProductId => $quantity) {
+                $promises[$externalProductId] = function () use ($integration, $externalProductId, $quantity) {
+                    return $this->updateProductStock($integration, (string) $externalProductId, $quantity);
+                };
+            }
+            
+            // Execute promises concurrently
+            foreach ($promises as $externalProductId => $promise) {
+                try {
+                    $result = $promise();
+                    
+                    if ($result['success']) {
+                        $results['success']++;
+                    } else {
+                        $results['failed']++;
+                        $results['errors'][$externalProductId] = $result['error'] ?? 'Unknown error';
+                    }
+                } catch (\Exception $e) {
+                    $results['failed']++;
+                    $results['errors'][$externalProductId] = $e->getMessage();
+                }
+            }
+            
+            // Small delay between chunks to avoid rate limiting
+            if (count($chunks) > 1) {
+                usleep(200000); // 200ms
+            }
+        }
+
+        return $results;
     }
 }

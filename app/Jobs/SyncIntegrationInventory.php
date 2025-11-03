@@ -17,6 +17,27 @@ class SyncIntegrationInventory implements ShouldQueue
     use Queueable;
     use SerializesModels;
 
+    /**
+     * The number of times the job may be attempted.
+     *
+     * @var int
+     */
+    public $tries = 3;
+
+    /**
+     * The number of seconds to wait before retrying the job.
+     *
+     * @var int
+     */
+    public $backoff = 60;
+
+    /**
+     * The maximum number of unhandled exceptions to allow before failing.
+     *
+     * @var int
+     */
+    public $maxExceptions = 3;
+
     protected int $integrationId;
 
     /**

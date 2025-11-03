@@ -5,12 +5,27 @@ namespace App\Services\Integrations;
 use App\Enums\IntegrationType;
 use App\Jobs\SyncIntegrationInventory;
 use App\Models\Integration;
+use App\Models\IntegrationSyncLog;
+use App\Models\IntegrationSyncLogItem;
 use App\Models\User;
 use App\Models\WarehouseStockTotal;
 use Carbon\Carbon;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
 
+/**
+ * Service for synchronizing inventory between local warehouse and external integrations.
+ * 
+ * Supports two-way synchronization:
+ * - local_to_presta: Sync local warehouse stock to Prestashop
+ * - prestashop_to_local: Sync Prestashop stock to local warehouse (metadata only)
+ * 
+ * Synchronization is triggered:
+ * - Automatically when warehouse documents are posted
+ * - On schedule (every 5 minutes by default, configurable per integration)
+ * - Manually via command: php artisan integrations:sync-inventory
+ */
 class IntegrationInventorySyncService
 {
     public function __construct(
@@ -73,23 +88,60 @@ class IntegrationInventorySyncService
             $linksQuery->whereIn('product_id', $productIds);
         }
 
+        $totalLinks = $linksQuery->count();
+        
+        // Create sync log
+        $syncLog = IntegrationSyncLog::create([
+            'integration_id' => $integration->id,
+            'user_id' => auth()->id(),
+            'type' => 'inventory',
+            'direction' => $mode,
+            'status' => 'pending',
+            'total_items' => $totalLinks,
+        ]);
+
+        $syncLog->markAsRunning();
+
         $synced = 0;
         $now = Carbon::now();
 
-        $linksQuery->chunkById(100, function (Collection $links) use ($integration, $mode, &$synced, $now): void {
-            if ($mode === 'local_to_presta') {
-                $synced += $this->syncLocalToPrestashop($integration, $links, $now);
-            } elseif ($mode === 'prestashop_to_local') {
-                $synced += $this->syncPrestashopToLocal($integration, $links, $now);
-            }
-        });
+        try {
+            $linksQuery->chunkById(100, function (Collection $links) use ($integration, $mode, &$synced, $now, $syncLog): void {
+                if ($mode === 'local_to_presta') {
+                    $synced += $this->syncLocalToPrestashop($integration, $links, $now, $syncLog);
+                } elseif ($mode === 'prestashop_to_local') {
+                    $synced += $this->syncPrestashopToLocal($integration, $links, $now, $syncLog);
+                }
+            });
+
+            $syncLog->markAsCompleted();
+            
+            Log::info('Integration inventory sync completed', [
+                'integration_id' => $integration->id,
+                'sync_log_id' => $syncLog->id,
+                'mode' => $mode,
+                'total' => $totalLinks,
+                'success' => $syncLog->success_count,
+                'failed' => $syncLog->failed_count,
+            ]);
+        } catch (\Exception $e) {
+            $syncLog->markAsFailed($e->getMessage());
+            
+            Log::error('Integration inventory sync failed', [
+                'integration_id' => $integration->id,
+                'sync_log_id' => $syncLog->id,
+                'error' => $e->getMessage(),
+            ]);
+            
+            throw $e;
+        }
 
         $this->updateIntegrationMeta($integration, $mode, $now, $synced);
 
-        return ['synced' => $synced];
+        return ['synced' => $synced, 'sync_log_id' => $syncLog->id];
     }
 
-    protected function syncLocalToPrestashop(Integration $integration, Collection $links, Carbon $timestamp): int
+    protected function syncLocalToPrestashop(Integration $integration, Collection $links, Carbon $timestamp, IntegrationSyncLog $syncLog): int
     {
         $warehouseId = Arr::get($integration->config, 'primary_warehouse_id');
 
@@ -102,6 +154,14 @@ class IntegrationInventorySyncService
             ->groupBy('product_id')
             ->pluck('available_quantity', 'product_id');
 
+        $synced = 0;
+
+        // Use batch updates for better performance when syncing many products
+        if ($links->count() > 10) {
+            return $this->syncLocalToPrestashopBatch($integration, $links, $stockTotals, $timestamp, $syncLog);
+        }
+
+        // Individual updates for small batches
         foreach ($links as $link) {
             $available = (float) ($stockTotals[$link->product_id] ?? 0);
 
@@ -111,17 +171,179 @@ class IntegrationInventorySyncService
                 'last_local_sync_at' => $timestamp->toIso8601String(),
             ]);
 
+            // Update stock in Prestashop
+            try {
+                Log::info('Syncing stock to Prestashop', [
+                    'integration_id' => $integration->id,
+                    'product_id' => $link->product_id,
+                    'external_product_id' => $link->external_product_id,
+                    'quantity' => $available,
+                ]);
+
+                $result = $this->prestashop->updateProductStock(
+                    $integration,
+                    (string) $link->external_product_id,
+                    $available
+                );
+
+                if ($result['success']) {
+                    $metadata['inventory']['last_sync_status'] = 'success';
+                    $metadata['inventory']['last_sync_error'] = null;
+                    $synced++;
+                    $syncLog->incrementSuccess();
+                    
+                    IntegrationSyncLogItem::create([
+                        'sync_log_id' => $syncLog->id,
+                        'product_id' => $link->product_id,
+                        'external_id' => $link->external_product_id,
+                        'status' => 'success',
+                        'quantity' => $available,
+                    ]);
+
+                    Log::info('Stock synced successfully', [
+                        'integration_id' => $integration->id,
+                        'product_id' => $link->product_id,
+                        'external_product_id' => $link->external_product_id,
+                        'quantity' => $available,
+                    ]);
+                } else {
+                    $metadata['inventory']['last_sync_status'] = 'failed';
+                    $metadata['inventory']['last_sync_error'] = $result['error'] ?? 'Unknown error';
+                    $syncLog->incrementFailed();
+                    
+                    IntegrationSyncLogItem::create([
+                        'sync_log_id' => $syncLog->id,
+                        'product_id' => $link->product_id,
+                        'external_id' => $link->external_product_id,
+                        'status' => 'failed',
+                        'quantity' => $available,
+                        'error_message' => $result['error'] ?? 'Unknown error',
+                    ]);
+                    
+                    Log::warning('Failed to sync stock to Prestashop', [
+                        'integration_id' => $integration->id,
+                        'link_id' => $link->id,
+                        'product_id' => $link->product_id,
+                        'external_product_id' => $link->external_product_id,
+                        'error' => $result['error'] ?? 'Unknown error',
+                    ]);
+                }
+            } catch (\Exception $e) {
+                $metadata['inventory']['last_sync_status'] = 'error';
+                $metadata['inventory']['last_sync_error'] = $e->getMessage();
+                $syncLog->incrementFailed();
+                
+                IntegrationSyncLogItem::create([
+                    'sync_log_id' => $syncLog->id,
+                    'product_id' => $link->product_id,
+                    'external_id' => $link->external_product_id,
+                    'status' => 'failed',
+                    'quantity' => $available,
+                    'error_message' => $e->getMessage(),
+                ]);
+                
+                Log::error('Exception during Prestashop stock sync', [
+                    'integration_id' => $integration->id,
+                    'link_id' => $link->id,
+                    'product_id' => $link->product_id,
+                    'external_product_id' => $link->external_product_id,
+                    'exception' => $e->getMessage(),
+                ]);
+            }
+
             $link->fill([
                 'metadata' => $metadata,
             ])->save();
-
-            // TODO: Call Prestashop API to update stock availability.
         }
 
-        return $links->count();
+        return $synced;
     }
 
-    protected function syncPrestashopToLocal(Integration $integration, Collection $links, Carbon $timestamp): int
+    /**
+     * Sync local stocks to Prestashop using batch operations
+     */
+    protected function syncLocalToPrestashopBatch(Integration $integration, Collection $links, Collection $stockTotals, Carbon $timestamp, IntegrationSyncLog $syncLog): int
+    {
+        // Prepare batch updates
+        $updates = [];
+        foreach ($links as $link) {
+            $available = (float) ($stockTotals[$link->product_id] ?? 0);
+            $updates[(string) $link->external_product_id] = $available;
+        }
+
+        Log::info('Starting batch sync to Prestashop', [
+            'integration_id' => $integration->id,
+            'total_products' => count($updates),
+        ]);
+
+        // Execute batch update
+        $result = $this->prestashop->updateProductStockBatch($integration, $updates);
+
+        // Update metadata for all links
+        $synced = 0;
+        foreach ($links as $link) {
+            $available = (float) ($stockTotals[$link->product_id] ?? 0);
+            $externalId = (string) $link->external_product_id;
+
+            $metadata = $link->metadata ?? [];
+            $metadata['inventory'] = array_merge($metadata['inventory'] ?? [], [
+                'last_local_quantity' => $available,
+                'last_local_sync_at' => $timestamp->toIso8601String(),
+            ]);
+
+            // Check if this product succeeded or failed
+            if (isset($result['errors'][$externalId])) {
+                $metadata['inventory']['last_sync_status'] = 'failed';
+                $metadata['inventory']['last_sync_error'] = $result['errors'][$externalId];
+                $syncLog->incrementFailed();
+                
+                IntegrationSyncLogItem::create([
+                    'sync_log_id' => $syncLog->id,
+                    'product_id' => $link->product_id,
+                    'external_id' => $link->external_product_id,
+                    'status' => 'failed',
+                    'quantity' => $available,
+                    'error_message' => $result['errors'][$externalId],
+                ]);
+            } else {
+                $metadata['inventory']['last_sync_status'] = 'success';
+                $metadata['inventory']['last_sync_error'] = null;
+                $synced++;
+                $syncLog->incrementSuccess();
+                
+                IntegrationSyncLogItem::create([
+                    'sync_log_id' => $syncLog->id,
+                    'product_id' => $link->product_id,
+                    'external_id' => $link->external_product_id,
+                    'status' => 'success',
+                    'quantity' => $available,
+                ]);
+            }
+
+            $link->fill([
+                'metadata' => $metadata,
+            ])->save();
+        }
+
+        if ($result['failed'] > 0) {
+            Log::warning('Batch sync to Prestashop completed with errors', [
+                'integration_id' => $integration->id,
+                'total' => $links->count(),
+                'success' => $result['success'],
+                'failed' => $result['failed'],
+            ]);
+        } else {
+            Log::info('Batch sync to Prestashop completed successfully', [
+                'integration_id' => $integration->id,
+                'total' => $links->count(),
+                'success' => $result['success'],
+            ]);
+        }
+
+        return $synced;
+    }
+
+    protected function syncPrestashopToLocal(Integration $integration, Collection $links, Carbon $timestamp, IntegrationSyncLog $syncLog): int
     {
         $productIds = $links->pluck('external_product_id')->filter()->unique()->values();
         $externalCache = [];
@@ -140,6 +362,7 @@ class IntegrationInventorySyncService
             $remoteQuantity = $externalCache[$externalId];
 
             if ($remoteQuantity === null) {
+                $syncLog->incrementSkipped();
                 continue;
             }
 
@@ -152,6 +375,16 @@ class IntegrationInventorySyncService
             $link->fill([
                 'metadata' => $metadata,
             ])->save();
+            
+            $syncLog->incrementSuccess();
+            
+            IntegrationSyncLogItem::create([
+                'sync_log_id' => $syncLog->id,
+                'product_id' => $link->product_id,
+                'external_id' => $link->external_product_id,
+                'status' => 'success',
+                'quantity' => $remoteQuantity,
+            ]);
 
             // TODO: Update local warehouse stock totals with $remoteQuantity if desired.
         }
@@ -172,12 +405,12 @@ class IntegrationInventorySyncService
         $integration->save();
     }
 
-    protected function getSyncMode(Integration $integration): string
+    public function getSyncMode(Integration $integration): string
     {
         return Arr::get($integration->config ?? [], 'inventory_sync_mode', 'disabled') ?? 'disabled';
     }
 
-    protected function getSyncIntervalMinutes(Integration $integration): int
+    public function getSyncIntervalMinutes(Integration $integration): int
     {
         return max(5, (int) Arr::get($integration->config ?? [], 'inventory_sync_interval_minutes', 180));
     }

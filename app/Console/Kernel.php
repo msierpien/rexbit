@@ -21,6 +21,11 @@ class Kernel extends ConsoleKernel
             ->everyFiveMinutes()
             ->withoutOverlapping();
 
+        // Synchronize inventory with Prestashop integrations
+        $schedule->command('integrations:sync-inventory')
+            ->everyFiveMinutes()
+            ->withoutOverlapping()
+            ->runInBackground();
     }
 
     protected function commands(): void
