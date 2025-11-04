@@ -51,7 +51,7 @@ class ProductIntegrationLinkController extends Controller
         $chunks = array_chunk($productIds, $chunkSize);
 
         foreach ($chunks as $chunk) {
-            LinkIntegrationProducts::dispatch($integration, $chunk);
+                        LinkIntegrationProducts::dispatch($integration, $chunk)->onQueue('integrations');
         }
 
         $queuedCount = count($productIds);

@@ -99,7 +99,7 @@ class ExecuteIntegrationImport implements ShouldQueue
             $runService->markQueued($run, count($chunkJobs));
 
             foreach ($chunkJobs as $job) {
-                dispatch($job);
+                dispatch($job)->onQueue('import');
             }
         } catch (Throwable $exception) {
             if (isset($resolved) && ($resolved['temporary'] ?? false) && isset($resolved['path']) && file_exists($resolved['path'])) {

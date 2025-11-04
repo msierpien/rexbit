@@ -7,7 +7,9 @@ use App\Models\IntegrationTask;
 use App\Services\Integrations\Import\ImportParserFactory;
 use App\Services\Integrations\Import\ImportSourceResolver;
 use Illuminate\Contracts\Validation\Factory as ValidationFactory;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 class TaskService
@@ -24,7 +26,10 @@ class TaskService
      */
     public function create(Integration $integration, array $attributes): IntegrationTask
     {
-        $data = $this->validate($attributes);
+        $normalized = $this->normalizeAttributes($attributes);
+        $data = $this->validate($normalized);
+
+        $sourceLocation = $this->storeSource($integration, null, $data);
 
         $task = $integration->tasks()->create([
             'name' => $data['name'],
@@ -32,7 +37,7 @@ class TaskService
             'resource_type' => $data['resource_type'] ?? 'products',
             'format' => $data['format'],
             'source_type' => $data['source_type'],
-            'source_location' => $data['source_location'],
+            'source_location' => $sourceLocation,
             'catalog_id' => $data['catalog_id'] ?? null,
             'delimiter' => $data['delimiter'] ?? null,
             'has_header' => $data['has_header'] ?? true,
@@ -46,7 +51,9 @@ class TaskService
             'options' => $data['options'] ?? [],
         ]);
 
-        return $task;
+        $this->maybeRefreshHeaders($task, $data, true);
+
+        return $task->refresh();
     }
 
     /**
@@ -54,7 +61,10 @@ class TaskService
      */
     public function update(IntegrationTask $task, array $attributes): IntegrationTask
     {
-        $data = $this->validate($attributes, $task);
+        $normalized = $this->normalizeAttributes($attributes);
+        $data = $this->validate($normalized, $task);
+
+        $sourceLocation = $this->storeSource($task->integration, $task, $data);
 
         $task->update([
             'name' => $data['name'],
@@ -62,7 +72,7 @@ class TaskService
             'resource_type' => $data['resource_type'] ?? $task->resource_type,
             'format' => $data['format'],
             'source_type' => $data['source_type'],
-            'source_location' => $data['source_location'],
+            'source_location' => $sourceLocation,
             'catalog_id' => $data['catalog_id'] ?? $task->catalog_id,
             'delimiter' => $data['delimiter'] ?? null,
             'has_header' => $data['has_header'] ?? $task->has_header,
@@ -75,6 +85,8 @@ class TaskService
             'filters' => $data['filters'] ?? $task->filters,
             'options' => $data['options'] ?? $task->options,
         ]);
+
+        $this->maybeRefreshHeaders($task, $data, false);
 
         return $task->refresh();
     }
@@ -120,7 +132,8 @@ class TaskService
             'resource_type' => ['nullable', Rule::in(['products', 'orders', 'customers', 'categories', 'stock'])],
             'format' => ['required', Rule::in(['csv', 'xml', 'json'])],
             'source_type' => ['required', Rule::in(['url', 'file', 'api'])],
-            'source_location' => ['required', 'string', 'max:500'],
+            'source_location' => ['required_unless:source_type,file', 'nullable', 'string', 'max:500'],
+            'source_file' => ['required_if:source_type,file', 'nullable', 'file'],
             'catalog_id' => ['nullable', 'integer', 'exists:product_catalogs,id'],
             'delimiter' => ['nullable', 'string', 'max:5'],
             'has_header' => ['nullable', 'boolean'],
@@ -138,5 +151,104 @@ class TaskService
         ];
 
         return $this->validator->make($attributes, $rules)->validate();
+    }
+
+    /**
+     * Normalize incoming attributes before validation.
+     *
+     * @param  array<string, mixed>  $attributes
+     * @return array<string, mixed>
+     */
+    protected function normalizeAttributes(array $attributes): array
+    {
+        if (($attributes['source_type'] ?? null) === 'file') {
+            $uploadedFile = $attributes['source_file'] ?? null;
+
+            if (! $uploadedFile instanceof UploadedFile && ($attributes['source_location'] ?? null) instanceof UploadedFile) {
+                $uploadedFile = $attributes['source_location'];
+            }
+
+            if ($uploadedFile instanceof UploadedFile) {
+                $attributes['source_file'] = $uploadedFile;
+            }
+
+            if (($attributes['source_location'] ?? null) instanceof UploadedFile) {
+                unset($attributes['source_location']);
+            }
+        }
+
+        return $attributes;
+    }
+
+    /**
+     * Store uploaded source file (if provided) and return path.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    protected function storeSource(Integration $integration, ?IntegrationTask $task, array $data): string
+    {
+        if (($data['source_type'] ?? null) !== 'file') {
+            return $data['source_location'] ?? ($task?->source_location ?? '');
+        }
+
+        /** @var UploadedFile|null $file */
+        $file = Arr::get($data, 'source_file');
+
+        if ($file instanceof UploadedFile) {
+            $userId = $integration->user_id ?? $integration->user?->id;
+
+            if (! $userId) {
+                throw new \RuntimeException('Nie można zapisać pliku importu bez przypisanego użytkownika integracji.');
+            }
+
+            $path = $file->store(
+                sprintf('integrations/%d/imports', $userId),
+                'local'
+            );
+
+            if ($task && $task->source_type === 'file' && $task->source_location) {
+                $disk = Storage::disk('local');
+                if ($disk->exists($task->source_location)) {
+                    $disk->delete($task->source_location);
+                }
+            }
+
+            return $path;
+        }
+
+        if ($task) {
+            return $task->source_location;
+        }
+
+        throw new \InvalidArgumentException('Nie dostarczono pliku źródłowego do importu.');
+    }
+
+    /**
+     * Refresh headers automatically when needed.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    protected function maybeRefreshHeaders(IntegrationTask $task, array $data, bool $isNew): void
+    {
+        $shouldRefresh = $isNew;
+        $sourceType = $data['source_type'] ?? $task->source_type;
+
+        if (($data['source_type'] ?? null) === 'file' && Arr::get($data, 'source_file') instanceof UploadedFile) {
+            $shouldRefresh = true;
+        }
+
+        if (Arr::get($data, 'refresh_headers', false)) {
+            $shouldRefresh = true;
+        }
+
+        if (! $shouldRefresh || ! in_array($sourceType, ['file', 'url'], true)) {
+            return;
+        }
+
+        try {
+            $this->refreshHeaders($task);
+        } catch (\Throwable $exception) {
+            report($exception);
+        }
     }
 }

@@ -73,7 +73,7 @@ class IntegrationImportProfileController extends Controller
         $this->authorize('update', $integration);
         $this->ensureRelation($integration, $profile);
 
-        ExecuteIntegrationImport::dispatch($profile->id);
+                ExecuteIntegrationImport::dispatch($profile->id)->onQueue('import');
 
         return redirect()
             ->route('integrations.edit', $integration)

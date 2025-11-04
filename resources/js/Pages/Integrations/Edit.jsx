@@ -369,7 +369,7 @@ function ProfileCreateForm({ integrationId, catalogs }) {
 
     profileForm.transform((data) => ({
         ...data,
-        source_location: data.source_type === 'url' ? data.source_url : data.source_file,
+        source_location: data.source_type === 'url' ? data.source_url : '',
         has_header: data.has_header ? 1 : 0,
         is_active: data.is_active ? 1 : 0,
     }));
@@ -624,7 +624,7 @@ function ProfileCard({ integrationId, profile, catalogs, mappingMeta }) {
         updateForm.transform((data) => ({
             ...data,
             _method: 'PUT',
-            source_location: data.source_type === 'url' ? data.source_url : data.source_file,
+            source_location: data.source_type === 'url' ? data.source_url : '',
             has_header: data.has_header ? 1 : 0,
             is_active: data.is_active ? 1 : 0,
         })).post(`/integrations/${integrationId}/import-profiles/${profile.id}`, {

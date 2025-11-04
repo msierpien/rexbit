@@ -18,6 +18,13 @@ class LinkIntegrationProducts implements ShouldQueue
     use Queueable;
     use SerializesModels;
 
+    /**
+     * The number of seconds the job can run before timing out.
+     *
+     * @var int
+     */
+    public $timeout = 300; // 5 minut
+
     protected int $integrationId;
 
     protected int $userId;

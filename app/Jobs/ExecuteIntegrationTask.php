@@ -110,7 +110,7 @@ class ExecuteIntegrationTask implements ShouldQueue
             $runService->markQueued($run, count($chunkJobs));
 
             foreach ($chunkJobs as $job) {
-                dispatch($job);
+                dispatch($job)->onQueue('import');
             }
 
             $scheduler->updateNextRun($task);

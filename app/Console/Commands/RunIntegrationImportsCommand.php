@@ -37,7 +37,7 @@ class RunIntegrationImportsCommand extends Command
         }
 
         foreach ($profiles as $profile) {
-            ExecuteIntegrationImport::dispatch($profile->id);
+                        ExecuteIntegrationImport::dispatch($profile->id)->onQueue('import');
 
             $this->scheduler->updateNextRun($profile);
 

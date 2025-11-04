@@ -49,13 +49,13 @@ class IntegrationInventorySyncService
 
         if (! empty($productIds)) {
             foreach (array_chunk($productIds, 200) as $chunk) {
-                SyncIntegrationInventory::dispatch($integration, $chunk)->afterCommit();
+                SyncIntegrationInventory::dispatch($integration, $chunk)->onQueue('integrations')->afterCommit();
             }
 
             return;
         }
 
-        SyncIntegrationInventory::dispatch($integration)->afterCommit();
+        SyncIntegrationInventory::dispatch($integration)->onQueue('integrations')->afterCommit();
     }
 
     public function shouldRunScheduled(Integration $integration): bool

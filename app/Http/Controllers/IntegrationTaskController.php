@@ -72,7 +72,7 @@ class IntegrationTaskController extends Controller
         $this->authorize('update', $integration);
         $this->ensureRelation($integration, $task);
 
-        ExecuteIntegrationTask::dispatch($task->id);
+        ExecuteIntegrationTask::dispatch($task->id)->onQueue('import');
 
         return redirect()
             ->route('integrations.edit', $integration)
