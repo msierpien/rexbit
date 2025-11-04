@@ -8,6 +8,7 @@ use App\Models\InventoryCountItem;
 use App\Models\Product;
 use App\Models\User;
 use App\Models\WarehouseStockTotal;
+use Illuminate\Support\Collection;
 use Illuminate\Contracts\Validation\Factory as ValidationFactory;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Support\Carbon;
@@ -136,6 +137,95 @@ class InventoryCountService
 
             return $item;
         });
+    }
+
+    /**
+     * Mark all uncounted items as zero (for remaining products)
+     *
+     * @return Collection<int, InventoryCountItem>
+     */
+    public function markUncountedAsZero(InventoryCount $inventoryCount, bool $includeMissing = false): Collection
+    {
+        if (!$inventoryCount->status->allowsEditing()) {
+            throw new \InvalidArgumentException('Nie można modyfikować inwentaryzacji w statusie: ' . $inventoryCount->status->label());
+        }
+
+        return $this->db->transaction(function () use ($inventoryCount, $includeMissing) {
+            $createdItems = collect();
+
+            if ($includeMissing) {
+                $createdItems = $this->createMissingZeroItems($inventoryCount);
+            }
+
+            $items = $inventoryCount->items()
+                ->whereNull('counted_at')
+                ->get();
+
+            if ($items->isEmpty()) {
+                return $createdItems;
+            }
+
+            $now = Carbon::now();
+
+            $updatedItems = $items->map(function (InventoryCountItem $item) use ($now) {
+                $item->counted_quantity = 0;
+                $item->counted_at = $now;
+                $item->save();
+                return $item->fresh(['product']);
+            });
+
+            return $createdItems->merge($updatedItems);
+        });
+    }
+
+    /**
+     * Create missing items (not yet present in inventory_count_items) with counted quantity 0
+     *
+     * @return Collection<int, InventoryCountItem>
+     */
+    private function createMissingZeroItems(InventoryCount $inventoryCount): Collection
+    {
+        $existingProductIds = InventoryCountItem::query()
+            ->where('inventory_count_id', $inventoryCount->id)
+            ->pluck('product_id')
+            ->all();
+
+        $created = collect();
+        $userId = $inventoryCount->user_id;
+        $warehouseId = $inventoryCount->warehouse_location_id;
+        $now = Carbon::now();
+
+        Product::query()
+            ->where('user_id', $userId)
+            ->whereNotIn('id', $existingProductIds)
+            ->orderBy('id')
+            ->chunkById(500, function ($products) use ($inventoryCount, $warehouseId, $userId, $now, &$created) {
+                $productIds = $products->pluck('id')->all();
+
+                $stocks = WarehouseStockTotal::query()
+                    ->where('user_id', $userId)
+                    ->where('warehouse_location_id', $warehouseId)
+                    ->whereIn('product_id', $productIds)
+                    ->get()
+                    ->keyBy('product_id');
+
+                foreach ($products as $product) {
+                    $stock = $stocks->get($product->id);
+
+                    $item = InventoryCountItem::create([
+                        'inventory_count_id' => $inventoryCount->id,
+                        'product_id' => $product->id,
+                        'system_quantity' => $stock?->on_hand ?? 0,
+                        'counted_quantity' => 0,
+                        'unit_cost' => $product->purchase_price_net ?? 0,
+                        'counted_at' => $now,
+                    ]);
+
+                        $created->push($item->fresh(['product']));
+                }
+            });
+
+        return $created;
     }
 
     /**

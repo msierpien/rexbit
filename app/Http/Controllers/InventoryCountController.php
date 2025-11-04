@@ -359,4 +359,43 @@ class InventoryCountController extends Controller
             ], 400);
         }
     }
+
+    /**
+     * Mark all uncounted items as zero
+     */
+    public function zeroUncounted(InventoryCount $inventory_count, Request $request)
+    {
+        try {
+            $items = $this->service->markUncountedAsZero(
+                $inventory_count,
+                $request->boolean('include_missing', false)
+            );
+
+            return response()->json([
+                'success' => true,
+                'items' => $items->map(fn ($item) => [
+                    'id' => $item->id,
+                    'product' => [
+                        'id' => $item->product->id,
+                        'name' => $item->product->name,
+                        'sku' => $item->product->sku,
+                        'ean' => $item->product->ean,
+                    ],
+                    'system_quantity' => (float) $item->system_quantity,
+                    'counted_quantity' => (float) $item->counted_quantity,
+                    'quantity_difference' => $item->quantity_difference,
+                    'unit_cost' => (float) $item->unit_cost,
+                    'value_difference' => $item->value_difference,
+                    'discrepancy_type' => $item->discrepancy_type,
+                    'notes' => $item->notes,
+                    'counted_at' => $item->counted_at?->format('Y-m-d H:i'),
+                ]),
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 400);
+        }
+    }
 }

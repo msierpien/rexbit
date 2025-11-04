@@ -1,5 +1,5 @@
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import DashboardLayout from '@/Layouts/DashboardLayout.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
@@ -24,8 +24,12 @@ import {
     TrendingDown,
     Minus,
     Scan,
-    Calculator
+    Calculator,
+    Eraser,
+    ChevronLeft,
+    ChevronRight
 } from 'lucide-react';
+import { toast } from 'sonner';
 
 const formatCurrency = (value) => {
     return new Intl.NumberFormat('pl-PL', {
@@ -152,9 +156,14 @@ export default function InventoryCountShow() {
     const { inventoryCount, items, flash } = usePage().props;
     const [showOnlyDiscrepancies, setShowOnlyDiscrepancies] = useState(false);
     const [itemsState, setItemsState] = useState(items);
+    const [page, setPage] = useState(1);
+    const [zeroing, setZeroing] = useState(false);
+    const scannerRef = useRef(null);
+    const PAGE_SIZE = 250;
 
     useEffect(() => {
         setItemsState(items);
+        setPage(1);
     }, [items]);
 
     const filteredItems = useMemo(() => {
@@ -163,6 +172,20 @@ export default function InventoryCountShow() {
         }
         return itemsState;
     }, [itemsState, showOnlyDiscrepancies]);
+
+    useEffect(() => {
+        const totalPages = Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE));
+        if (page > totalPages) {
+            setPage(totalPages);
+        }
+    }, [filteredItems, page]);
+
+    const totalPages = useMemo(() => Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE)), [filteredItems.length]);
+
+    const paginatedItems = useMemo(() => {
+        const start = (page - 1) * PAGE_SIZE;
+        return filteredItems.slice(start, start + PAGE_SIZE);
+    }, [filteredItems, page]);
 
     const products = useMemo(() => {
         return itemsState.map((item) => ({
@@ -192,6 +215,88 @@ export default function InventoryCountShow() {
         };
     }, [itemsState]);
 
+    const handleZeroUncounted = useCallback(async () => {
+        if (zeroing || !inventoryCount.allows_editing) {
+            return;
+        }
+
+        if (
+            !window.confirm(
+                'Czy na pewno chcesz dodać wszystkie pozostałe produkty i ustawić ich ilość na 0? Operacja może potrwać dla dużej liczby produktów.'
+            )
+        ) {
+            return;
+        }
+
+        setZeroing(true);
+
+        try {
+            const response = await fetch(`/inventory-counts/${inventoryCount.id}/zero-uncounted`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                },
+                body: JSON.stringify({
+                    include_missing: true,
+                }),
+            });
+
+            const payload = await response.json();
+
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.message || 'Nie udało się zaktualizować pozycji.');
+            }
+
+            if (payload.items?.length) {
+                const updatedMap = new Map(payload.items.map((item) => [item.product.id, item]));
+
+                setItemsState((prev) => {
+                    const seen = new Set();
+                    const next = prev.map((item) => {
+                        const updated = updatedMap.get(item.product.id);
+                        if (updated) {
+                            seen.add(item.product.id);
+                            return { ...item, ...updated };
+                        }
+                        return item;
+                    });
+
+                    payload.items.forEach((item) => {
+                        if (!seen.has(item.product.id)) {
+                            next.push(item);
+                        }
+                    });
+
+                    return next.sort((a, b) =>
+                        a.product.name.localeCompare(b.product.name, 'pl', { sensitivity: 'base' })
+                    );
+                });
+
+                toast.success(`Zerowano ${payload.items.length} produktów.`);
+            } else {
+                toast.info('Wszystkie produkty są już policzone.');
+            }
+            setPage(1);
+        } catch (error) {
+            console.error('Zero uncounted error:', error);
+            toast.error(error.message || 'Wystąpił błąd podczas zerowania pozycji.');
+        } finally {
+            setZeroing(false);
+        }
+    }, [inventoryCount.allows_editing, inventoryCount.id, zeroing]);
+
+    const openScannerForItem = useCallback(
+        (item) => {
+            if (!inventoryCount.allows_editing || !item?.product) {
+                return;
+            }
+
+            scannerRef.current?.openForProduct?.(item.product, item.counted_quantity);
+        },
+        [inventoryCount.allows_editing]
+    );
+
     const handleProductScanned = useCallback(async (product, newQuantity, ean = null) => {
         if (!inventoryCount.allows_editing) {
             return;
@@ -199,9 +304,19 @@ export default function InventoryCountShow() {
 
         try {
             // Use EAN if provided, otherwise use product id
-            const requestBody = ean 
-                ? { ean: ean, counted_quantity: newQuantity }
-                : { product_id: product.id, counted_quantity: newQuantity, scanned_ean: product.ean };
+            const requestBody = {
+                counted_quantity: newQuantity,
+            };
+
+            const resolvedEan = ean ?? product?.ean ?? null;
+            if (resolvedEan) {
+                requestBody.ean = resolvedEan;
+                requestBody.scanned_ean = resolvedEan;
+            }
+
+            if (product?.id) {
+                requestBody.product_id = product.id;
+            }
 
             const response = await fetch(`/inventory-counts/${inventoryCount.id}/update-quantity`, {
                 method: 'POST',
@@ -302,6 +417,7 @@ export default function InventoryCountShow() {
                 {/* Scanner Component */}
                 {inventoryCount.allows_editing && (
                     <InventoryScanner
+                        ref={scannerRef}
                         products={products}
                         onQuantityUpdate={handleProductScanned}
                         enabled={true}
@@ -388,6 +504,42 @@ export default function InventoryCountShow() {
                             )}
                         </CardTitle>
                         <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground">
+                                Strona {page} / {totalPages} • {filteredItems.length} pozycji
+                            </span>
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setPage((current) => Math.max(1, current - 1))}
+                                disabled={page <= 1}
+                                className="h-8 w-8 p-0"
+                            >
+                                <ChevronLeft className="h-4 w-4" />
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                                disabled={page >= totalPages}
+                                className="h-8 w-8 p-0"
+                            >
+                                <ChevronRight className="h-4 w-4" />
+                            </Button>
+                            {inventoryCount.allows_editing && (
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={handleZeroUncounted}
+                                    disabled={zeroing}
+                                    className="gap-2"
+                                >
+                                    <Eraser className="h-4 w-4" />
+                                    {zeroing ? 'Zerowanie...' : 'Zeruj niepoliczone'}
+                                </Button>
+                            )}
                             <Button
                                 variant={showOnlyDiscrepancies ? "default" : "outline"}
                                 size="sm"
@@ -444,11 +596,31 @@ export default function InventoryCountShow() {
                                             </TableCell>
                                         </TableRow>
                                     ) : (
-                                        filteredItems.map((item) => (
+                                        paginatedItems.map((item) => (
                                             <TableRow key={item.id}>
                                                 <TableCell>
-                                                    <div>
-                                                        <div className="font-medium">{item.product.name}</div>
+                                                    <div className="space-y-1">
+                                                        <div className="flex items-center gap-2">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => openScannerForItem(item)}
+                                                                className="text-left font-medium text-blue-600 hover:underline focus:outline-none focus:underline disabled:opacity-60 dark:text-blue-400"
+                                                                disabled={!inventoryCount.allows_editing}
+                                                            >
+                                                                {item.product.name}
+                                                            </button>
+                                                            {inventoryCount.allows_editing && (
+                                                                <Button
+                                                                    type="button"
+                                                                    variant="ghost"
+                                                                    size="icon"
+                                                                    onClick={() => openScannerForItem(item)}
+                                                                    className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                                                                >
+                                                                    <Edit className="h-4 w-4" />
+                                                                </Button>
+                                                            )}
+                                                        </div>
                                                         <div className="text-xs text-muted-foreground">
                                                             SKU: {item.product.sku}
                                                             {item.product.ean && (

@@ -142,6 +142,8 @@ Route::middleware(['auth', 'role:user,admin'])->group(function (): void {
         ->name('inventory-counts.find-product-by-ean');
     Route::post('/inventory-counts/{inventory_count}/update-quantity', [\App\Http\Controllers\InventoryCountController::class, 'updateQuantity'])
         ->name('inventory-counts.update-quantity');
+    Route::post('/inventory-counts/{inventory_count}/zero-uncounted', [\App\Http\Controllers\InventoryCountController::class, 'zeroUncounted'])
+        ->name('inventory-counts.zero-uncounted');
 });
 
 Route::middleware(['auth', 'role:admin'])->group(function (): void {

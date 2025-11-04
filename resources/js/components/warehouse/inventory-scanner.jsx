@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
+import { useState, useRef, useCallback, useMemo, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { Button } from '@/components/ui/button.jsx';
 import { Input } from '@/components/ui/input.jsx';
 import { Label } from '@/components/ui/label.jsx';
@@ -22,12 +22,15 @@ import { getScannerSounds } from '@/lib/scanner-sounds.js';
  * Reuses the global barcode scanning hook and scanner sounds
  * to provide the same UX as warehouse documents.
  */
-export default function InventoryScanner({
-    products = [],
-    onQuantityUpdate,
-    enabled = true,
-    currentItems = [],
-}) {
+const InventoryScanner = forwardRef(function InventoryScanner(
+    {
+        products = [],
+        onQuantityUpdate,
+        enabled = true,
+        currentItems = [],
+    },
+    ref
+) {
     const [isOpen, setIsOpen] = useState(false);
     const [manualEan, setManualEan] = useState('');
     const [quantityInput, setQuantityInput] = useState(1);
@@ -63,14 +66,31 @@ export default function InventoryScanner({
     }, [currentItems]);
 
     const getCurrentQuantity = useCallback(
-        (productId) => {
-            if (lastScanned?.product?.id === productId && lastScanned.countedQuantity !== undefined) {
-                return lastScanned.countedQuantity;
-            }
-            return currentQuantities.get(productId) ?? 0;
-        },
-        [currentQuantities, lastScanned]
+        (productId) => currentQuantities.get(productId) ?? 0,
+        [currentQuantities]
     );
+
+    useEffect(() => {
+        setLastScanned((prev) => {
+            if (!prev) {
+                return prev;
+            }
+            const synchronizedQuantity = currentQuantities.get(prev.product.id);
+            if (synchronizedQuantity === undefined || synchronizedQuantity === prev.countedQuantity) {
+                return prev;
+            }
+            return {
+                ...prev,
+                countedQuantity: synchronizedQuantity,
+            };
+        });
+    }, [currentQuantities]);
+
+    useEffect(() => {
+        if (lastScanned?.countedQuantity !== undefined) {
+            setQuantityInput(lastScanned.countedQuantity);
+        }
+    }, [lastScanned?.countedQuantity]);
 
     const findProductByEan = useCallback(async (ean) => {
         try {
@@ -326,6 +346,46 @@ export default function InventoryScanner({
         }
     }, [lastScanned, isProcessing, manualAddAmount, getCurrentQuantity, runQuantityUpdate, confirmZeroing]);
 
+    const openPanel = useCallback(() => {
+        if (!enabled) {
+            return;
+        }
+        setIsOpen(true);
+    }, [enabled]);
+
+    const openForProduct = useCallback(
+        (product, countedQuantity = null) => {
+            if (!enabled || !product) {
+                return;
+            }
+
+            const quantity = countedQuantity ?? getCurrentQuantity(product.id);
+
+            setLastScanned({
+                product,
+                countedQuantity: quantity,
+                addedQuantity: null,
+                timestamp: new Date(),
+                ean: product.ean,
+                actionType: 'manualSelect',
+            });
+
+            setQuantityInput(quantity);
+            setManualAddAmount('');
+            setIsOpen(true);
+        },
+        [enabled, getCurrentQuantity]
+    );
+
+    useImperativeHandle(
+        ref,
+        () => ({
+            open: openPanel,
+            openForProduct,
+        }),
+        [openPanel, openForProduct]
+    );
+
     if (!enabled) {
         return null;
     }
@@ -554,4 +614,6 @@ export default function InventoryScanner({
             </Dialog>
         </>
     );
-}
+});
+
+export default InventoryScanner;
