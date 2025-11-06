@@ -64,6 +64,14 @@ class User extends Authenticatable
     }
 
     /**
+     * Determine if the user is an admin.
+     */
+    public function isAdmin(): bool
+    {
+        return $this->hasRole(\App\Enums\Role::ADMIN);
+    }
+
+    /**
      * Determine if the user has the given status.
      */
     public function hasStatus(\App\Enums\UserStatus|string $status): bool

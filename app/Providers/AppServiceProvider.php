@@ -19,6 +19,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Register model observers
+        \App\Models\WarehouseDocument::observe(\App\Observers\WarehouseDocumentObserver::class);
+        \App\Models\WarehouseDocumentItem::observe(\App\Observers\WarehouseDocumentItemObserver::class);
+
         \Illuminate\Support\Facades\Gate::policy(
             \App\Models\Integration::class,
             \App\Policies\IntegrationPolicy::class
@@ -32,6 +36,7 @@ class AppServiceProvider extends ServiceProvider
             \App\Models\WarehouseDocument::class => \App\Policies\WarehouseDocumentPolicy::class,
             \App\Models\WarehouseLocation::class => \App\Policies\WarehouseLocationPolicy::class,
             \App\Models\Contractor::class => \App\Policies\ContractorPolicy::class,
+            \App\Models\InventoryCount::class => \App\Policies\InventoryCountPolicy::class,
         ]);
     }
 }

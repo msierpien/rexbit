@@ -1,4 +1,5 @@
-import { Head, Link, router, usePage } from '@inertiajs/react';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
+import { useEffect, useMemo, useState } from 'react';
 import DashboardLayout from '@/Layouts/DashboardLayout.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
@@ -14,6 +15,7 @@ import {
 } from '@/components/ui/table.jsx';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert.jsx';
 import DocumentStatusActions from '@/components/warehouse/document-status-actions.jsx';
+import DocumentItems from '@/components/warehouse/document-items.jsx';
 import { cn } from '@/lib/utils.js';
 
 const currencyFormatter = new Intl.NumberFormat('pl-PL', {
@@ -91,7 +93,129 @@ function MetadataSection({ metadata }) {
 }
 
 export default function WarehouseDocumentShow() {
-    const { document, flash } = usePage().props;
+    const { document, flash, adminPostedEdit = null, auth } = usePage().props;
+
+    const isAdmin = auth?.user?.role === 'admin';
+    const canAdminEditPosted = Boolean(isAdmin && document.status === 'posted' && adminPostedEdit?.enabled);
+    const adminProducts = adminPostedEdit?.products ?? [];
+
+    const adminInitialItems = useMemo(
+        () =>
+            (document.items || []).map((item) => ({
+                product_id: item.product_id ?? item.product?.id ?? '',
+                quantity: item.quantity ?? '',
+                unit_price: item.unit_price ?? '',
+                vat_rate: item.vat_rate ?? '',
+            })),
+        [document.items]
+    );
+
+    const [adminItems, setAdminItems] = useState(adminInitialItems);
+    const adminForm = useForm({ items: adminInitialItems });
+
+    useEffect(() => {
+        setAdminItems(adminInitialItems);
+    }, [adminInitialItems]);
+
+    useEffect(() => {
+        adminForm.setData('items', adminItems);
+    }, [adminForm, adminItems]);
+
+    const [previewState, setPreviewState] = useState({
+        loading: false,
+        changes: [],
+        error: null,
+        fetchedAt: null,
+    });
+
+    useEffect(() => {
+        setPreviewState((current) => ({
+            ...current,
+            changes: [],
+            error: null,
+            fetchedAt: null,
+        }));
+    }, [adminItems]);
+
+    const productLookup = useMemo(() => {
+        return adminProducts.reduce((accumulator, product) => {
+            accumulator[product.id] = product;
+            return accumulator;
+        }, {});
+    }, [adminProducts]);
+
+    const csrfToken =
+        typeof window !== 'undefined'
+            ? window.document.querySelector('meta[name="csrf-token"]')?.content ?? ''
+            : '';
+
+    const handleAdminPreview = async () => {
+        if (!canAdminEditPosted) {
+            return;
+        }
+
+        setPreviewState({ loading: true, changes: [], error: null, fetchedAt: null });
+
+        try {
+            const response = await fetch(`/warehouse/documents/${document.id}/preview-edit`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': csrfToken,
+                },
+                body: JSON.stringify({ items: adminForm.data.items }),
+            });
+
+            const payload = await response.json();
+
+            if (!response.ok || payload.success !== true) {
+                throw new Error(payload.error || 'Nie udało się pobrać podglądu zmian.');
+            }
+
+            setPreviewState({
+                loading: false,
+                changes: payload.changes ?? [],
+                error: null,
+                fetchedAt: new Date().toISOString(),
+            });
+        } catch (error) {
+            setPreviewState({
+                loading: false,
+                changes: [],
+                error: error?.message ?? 'Nie udało się pobrać podglądu zmian.',
+                fetchedAt: null,
+            });
+        }
+    };
+
+    const handleAdminSubmit = (event) => {
+        event.preventDefault();
+
+        if (!canAdminEditPosted) {
+            return;
+        }
+
+        adminForm.post(`/warehouse/documents/${document.id}/edit-posted`, {
+            preserveScroll: true,
+            onSuccess: () => {
+                setPreviewState({ loading: false, changes: [], error: null, fetchedAt: null });
+            },
+        });
+    };
+
+    const handleAdminReset = () => {
+        setAdminItems(adminInitialItems);
+        adminForm.setData('items', adminInitialItems);
+    };
+
+    const previewHasChanges = previewState.changes.length > 0;
+    const previewTimestampLabel = previewState.fetchedAt
+        ? new Date(previewState.fetchedAt).toLocaleTimeString('pl-PL', {
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+          })
+        : null;
 
     const handleDelete = () => {
         if (!document.can_be_deleted) {
@@ -281,6 +405,132 @@ export default function WarehouseDocumentShow() {
                         </div>
                     </CardContent>
                 </Card>
+
+                {canAdminEditPosted && (
+                    <Card className="border-amber-200 bg-amber-50/70 dark:border-amber-500/30 dark:bg-amber-950/20">
+                        <CardHeader>
+                            <CardTitle>Edycja zatwierdzonego dokumentu (administrator)</CardTitle>
+                            <CardDescription>
+                                Po zapisaniu stany magazynowe zostaną przeliczone, a zmiany zapisane w logach audytowych.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <p className="text-sm text-muted-foreground">
+                                Najpierw wykonaj podgląd, aby sprawdzić wpływ zmian na stany magazynowe. Formularz korzysta z
+                                bieżących pozycji dokumentu i produktów użytkownika.
+                            </p>
+
+                            {!adminProducts.length ? (
+                                <Alert variant="destructive">
+                                    <AlertTitle>Brak produktów do wyboru</AlertTitle>
+                                    <AlertDescription>
+                                        Dodaj produkty do swojego katalogu, aby móc zaktualizować zatwierdzony dokument.
+                                    </AlertDescription>
+                                </Alert>
+                            ) : (
+                                <form onSubmit={handleAdminSubmit} className="space-y-4">
+                                    <DocumentItems
+                                        items={adminItems}
+                                        onChange={setAdminItems}
+                                        products={adminProducts}
+                                        warehouseId={document.warehouse_location_id ?? document.warehouse?.id ?? null}
+                                    />
+                                    {adminForm.errors.items && (
+                                        <p className="text-xs text-destructive">{adminForm.errors.items}</p>
+                                    )}
+                                    <div className="flex flex-wrap gap-2">
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            onClick={handleAdminPreview}
+                                            disabled={previewState.loading || adminForm.processing}
+                                        >
+                                            {previewState.loading ? 'Ładowanie podglądu...' : 'Podgląd zmian'}
+                                        </Button>
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            onClick={handleAdminReset}
+                                            disabled={adminForm.processing || previewState.loading}
+                                        >
+                                            Przywróć bieżące wartości
+                                        </Button>
+                                        <Button type="submit" disabled={adminForm.processing}>
+                                            {adminForm.processing ? 'Zapisywanie...' : 'Zapisz zmiany'}
+                                        </Button>
+                                    </div>
+                                </form>
+                            )}
+
+                            {previewState.error && (
+                                <Alert variant="destructive">
+                                    <AlertTitle>Nie udało się przygotować podglądu</AlertTitle>
+                                    <AlertDescription>{previewState.error}</AlertDescription>
+                                </Alert>
+                            )}
+
+                            {previewHasChanges && (
+                                <div className="space-y-3 rounded-lg border border-dashed border-amber-200 bg-white/80 p-4 dark:border-amber-500/30 dark:bg-slate-900/40">
+                                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                                        <span>Podgląd wpływu na stany magazynowe</span>
+                                        {previewTimestampLabel && <span>Ostatnia aktualizacja: {previewTimestampLabel}</span>}
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                        <Table>
+                                            <TableHeader className="bg-amber-100/50 dark:bg-amber-950/30">
+                                                <TableRow>
+                                                    <TableHead>Produkt</TableHead>
+                                                    <TableHead className="text-right">Poprzednia ilość</TableHead>
+                                                    <TableHead className="text-right">Nowa ilość</TableHead>
+                                                    <TableHead className="text-right">Zmiana stanu</TableHead>
+                                                    <TableHead className="text-right">Stan obecny</TableHead>
+                                                    <TableHead className="text-right">Stan po zmianie</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {previewState.changes.map((change) => {
+                                                    const product = productLookup[change.product_id];
+                                                    const netChangeClass = change.net_stock_change > 0
+                                                        ? 'text-emerald-600'
+                                                        : change.net_stock_change < 0
+                                                            ? 'text-rose-600'
+                                                            : 'text-foreground';
+
+                                                    return (
+                                                        <TableRow key={change.product_id}>
+                                                            <TableCell>
+                                                                <div className="font-medium text-foreground">
+                                                                    {product?.name ?? `Produkt #${change.product_id}`}
+                                                                </div>
+                                                                <div className="text-xs text-muted-foreground">ID: {change.product_id}</div>
+                                                            </TableCell>
+                                                            <TableCell className="text-right">
+                                                                {formatQuantity(change.old_quantity)} szt.
+                                                            </TableCell>
+                                                            <TableCell className="text-right">
+                                                                {formatQuantity(change.new_quantity)} szt.
+                                                            </TableCell>
+                                                            <TableCell className={cn('text-right font-semibold', netChangeClass)}>
+                                                                {change.net_stock_change > 0 ? '+' : ''}
+                                                                {formatQuantity(change.net_stock_change)} szt.
+                                                            </TableCell>
+                                                            <TableCell className="text-right">
+                                                                {formatQuantity(change.current_stock)} szt.
+                                                            </TableCell>
+                                                            <TableCell className="text-right">
+                                                                {formatQuantity(change.new_stock)} szt.
+                                                            </TableCell>
+                                                        </TableRow>
+                                                    );
+                                                })}
+                                            </TableBody>
+                                        </Table>
+                                    </div>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+                )}
 
                 <div className="grid gap-4 md:grid-cols-3">
                     <Card className="border-dashed bg-muted/20">

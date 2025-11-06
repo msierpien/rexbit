@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Enums\WarehouseDocumentStatus;
 use App\Models\WarehouseDocument;
 use App\Services\Warehouse\WarehouseDocumentService;
+use App\Services\Warehouse\WarehouseDocumentEditService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -12,8 +13,10 @@ use Inertia\Response;
 
 class WarehouseDocumentController extends Controller
 {
-    public function __construct(private WarehouseDocumentService $service)
-    {
+    public function __construct(
+        private WarehouseDocumentService $service,
+        private WarehouseDocumentEditService $editService
+    ) {
         $this->middleware('auth');
         $this->authorizeResource(WarehouseDocument::class, 'warehouse_document');
     }
@@ -200,6 +203,7 @@ class WarehouseDocumentController extends Controller
 
         $itemTotals = $warehouse_document->items->map(fn ($item) => [
             'id' => $item->id,
+            'product_id' => $item->product_id,
             'product' => [
                 'id' => $item->product?->id,
                 'name' => $item->product?->name,
@@ -217,6 +221,32 @@ class WarehouseDocumentController extends Controller
             'total_net_value' => $itemTotals->sum('net_value'),
         ];
 
+        $adminPostedEditContext = null;
+        if ($request->user()->isAdmin() && $warehouse_document->status === WarehouseDocumentStatus::POSTED) {
+            $products = $request->user()->products()
+                ->with('warehouseStocks.warehouse')
+                ->orderBy('name')
+                ->get();
+
+            $adminPostedEditContext = [
+                'enabled' => true,
+                'products' => $products->map(fn ($product) => [
+                    'id' => $product->id,
+                    'name' => $product->name,
+                    'sku' => $product->sku,
+                    'ean' => $product->ean,
+                    'warehouse_stocks' => $product->warehouseStocks->map(fn ($stock) => [
+                        'warehouse_location_id' => $stock->warehouse_location_id,
+                        'warehouse_name' => $stock->warehouse->name ?? 'N/A',
+                        'on_hand' => $stock->on_hand,
+                        'reserved' => $stock->reserved,
+                        'incoming' => $stock->incoming,
+                        'available' => $stock->on_hand - $stock->reserved,
+                    ])->values(),
+                ])->values(),
+            ];
+        }
+
         return Inertia::render('Warehouse/Documents/Show', [
             'document' => [
                 'id' => $warehouse_document->id,
@@ -227,6 +257,7 @@ class WarehouseDocumentController extends Controller
                 'issued_at' => $warehouse_document->issued_at?->format('Y-m-d'),
                 'created_at' => $warehouse_document->created_at?->format('Y-m-d H:i'),
                 'updated_at' => $warehouse_document->updated_at?->format('Y-m-d H:i'),
+                'warehouse_location_id' => $warehouse_document->warehouse_location_id,
                 'warehouse' => $warehouse_document->warehouse?->only(['id', 'name']),
                 'contractor' => $warehouse_document->contractor?->only(['id', 'name']),
                 'user' => $warehouse_document->user?->only(['id', 'name', 'email']),
@@ -238,6 +269,7 @@ class WarehouseDocumentController extends Controller
                 'deletion_block_reason' => $warehouse_document->getDeletionBlockReason(),
                 'metadata' => $warehouse_document->metadata ?? [],
             ],
+            'adminPostedEdit' => $adminPostedEditContext,
         ]);
     }
 
@@ -255,6 +287,88 @@ class WarehouseDocumentController extends Controller
         $warehouse_document->delete();
 
         return redirect()->route('warehouse.documents.index')->with('status', 'Dokument został usunięty.');
+    }
+
+    /**
+     * Archive a warehouse document
+     */
+    public function archive(Request $request, WarehouseDocument $warehouse_document): RedirectResponse
+    {
+        try {
+            $this->service->archive($warehouse_document, $request->user());
+            return redirect()->back()->with('status', 'Dokument został zarchiwizowany.');
+        } catch (\InvalidArgumentException $e) {
+            return redirect()->back()->with('error', $e->getMessage());
+        }
+    }
+
+    /**
+     * Edytuj zatwierdzony dokument z przeliczeniem stanów magazynowych (tylko dla adminów)
+     */
+    public function editPosted(Request $request, WarehouseDocument $warehouse_document): RedirectResponse
+    {
+        // Sprawdź uprawnienia - tylko admin może edytować zatwierdzone dokumenty
+        // Tu możesz dodać własną logikę autoryzacji, np. sprawdzenie roli
+        if (!$request->user()->isAdmin()) {
+            return redirect()->back()->with('error', 'Tylko administrator może edytować zatwierdzone dokumenty.');
+        }
+
+        $validated = $request->validate([
+            'items' => ['required', 'array', 'min:1'],
+            'items.*.product_id' => ['required', 'exists:products,id'],
+            'items.*.quantity' => ['required', 'numeric', 'min:0.001'],
+            'items.*.unit_price' => ['nullable', 'numeric', 'min:0'],
+            'items.*.vat_rate' => ['nullable', 'integer', 'min:0', 'max:100'],
+        ]);
+
+        try {
+            $this->editService->editPostedDocument(
+                $warehouse_document,
+                $validated['items'],
+                $request->user()
+            );
+
+            return redirect()
+                ->route('warehouse.documents.show', $warehouse_document)
+                ->with('status', 'Zatwierdzony dokument został zaktualizowany. Stany magazynowe zostały przeliczone.');
+        } catch (\InvalidArgumentException $e) {
+            return redirect()->back()->with('error', $e->getMessage());
+        } catch (\Exception $e) {
+            return redirect()->back()->with('error', 'Błąd podczas edycji dokumentu: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Podgląd zmian w stanach magazynowych przed edycją zatwierdzonego dokumentu
+     */
+    public function previewPostedEdit(Request $request, WarehouseDocument $warehouse_document)
+    {
+        // Sprawdź uprawnienia
+        if (!$request->user()->isAdmin()) {
+            return response()->json(['error' => 'Brak uprawnień'], 403);
+        }
+
+        $validated = $request->validate([
+            'items' => ['required', 'array', 'min:1'],
+            'items.*.product_id' => ['required', 'exists:products,id'],
+            'items.*.quantity' => ['required', 'numeric', 'min:0.001'],
+            'items.*.unit_price' => ['nullable', 'numeric', 'min:0'],
+            'items.*.vat_rate' => ['nullable', 'integer', 'min:0', 'max:100'],
+        ]);
+
+        try {
+            $changes = $this->editService->previewStockChanges(
+                $warehouse_document,
+                $validated['items']
+            );
+
+            return response()->json([
+                'success' => true,
+                'changes' => $changes,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 400);
+        }
     }
 
     /**

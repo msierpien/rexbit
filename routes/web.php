@@ -115,6 +115,12 @@ Route::middleware(['auth', 'role:user,admin'])->group(function (): void {
         ->name('warehouse.documents.cancel');
     Route::post('/warehouse/documents/{warehouse_document}/archive', [WarehouseDocumentController::class, 'archive'])
         ->name('warehouse.documents.archive');
+    
+    // Admin routes for editing posted documents
+    Route::post('/warehouse/documents/{warehouse_document}/edit-posted', [WarehouseDocumentController::class, 'editPosted'])
+        ->name('warehouse.documents.edit-posted');
+    Route::post('/warehouse/documents/{warehouse_document}/preview-edit', [WarehouseDocumentController::class, 'previewPostedEdit'])
+        ->name('warehouse.documents.preview-edit');
     Route::get('/warehouse/deliveries', [WarehouseDeliveryController::class, 'index'])->name('warehouse.deliveries.index');
     Route::get('/warehouse/settings', [WarehouseSettingsController::class, 'index'])->name('warehouse.settings');
     Route::post('/warehouse/settings', [WarehouseSettingsController::class, 'update'])->name('warehouse.settings.update');
