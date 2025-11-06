@@ -460,4 +460,27 @@ class IntegrationController extends Controller
 
         return $result;
     }
+
+    /**
+     * Manually trigger inventory sync for PrestaShop integration
+     */
+    public function syncInventory(Request $request, Integration $integration): RedirectResponse
+    {
+        if ($integration->type !== IntegrationType::PRESTASHOP) {
+            return back()->with('error', 'Synchronizacja stanów magazynowych jest dostępna tylko dla integracji PrestaShop.');
+        }
+
+        $this->authorize('update', $integration);
+
+        $productIds = $request->input('product_ids', []);
+        
+        app(\App\Services\Integrations\IntegrationInventorySyncService::class)
+            ->dispatchForIntegration($integration, $productIds);
+
+        $message = empty($productIds) 
+            ? 'Synchronizacja wszystkich stanów magazynowych została uruchomiona w tle.'
+            : 'Synchronizacja stanów magazynowych dla ' . count($productIds) . ' produktów została uruchomiona w tle.';
+
+        return back()->with('success', $message);
+    }
 }

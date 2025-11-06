@@ -44,6 +44,9 @@ Route::middleware(['auth', 'role:user,admin'])->group(function (): void {
 
     Route::post('/integrations/{integration}/test', [IntegrationController::class, 'test'])
         ->name('integrations.test');
+    
+    Route::post('/integrations/{integration}/sync-inventory', [IntegrationController::class, 'syncInventory'])
+        ->name('integrations.sync-inventory');
 
     // New simplified task routes
     Route::post('/integrations/{integration}/tasks', [IntegrationTaskController::class, 'store'])

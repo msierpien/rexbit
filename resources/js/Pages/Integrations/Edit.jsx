@@ -32,9 +32,10 @@ import {
     Download,
     MapPin,
     CalendarClock,
+    PackageCheck,
 } from 'lucide-react';
 
-function IntegrationSummaryCard({ integration, onTest, onDelete, testing, deleting }) {
+function IntegrationSummaryCard({ integration, onTest, onDelete, onSyncInventory, testing, deleting, syncing }) {
     return (
         <Card className="border border-border shadow-sm">
             <CardHeader>
@@ -74,6 +75,17 @@ function IntegrationSummaryCard({ integration, onTest, onDelete, testing, deleti
                 </div>
             </CardContent>
             <CardFooter className="flex flex-wrap items-center justify-end gap-3">
+                {integration.type === 'prestashop' && onSyncInventory && (
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={onSyncInventory}
+                        disabled={syncing}
+                    >
+                        <PackageCheck className={`mr-2 size-4 ${syncing ? 'animate-pulse' : ''}`} />
+                        {syncing ? 'Synchronizuję...' : 'Synchronizuj stany'}
+                    </Button>
+                )}
                 <Button
                     variant="secondary"
                     size="sm"
@@ -984,6 +996,7 @@ function IntegrationsEdit() {
 
     const [testing, setTesting] = useState(false);
     const [deleting, setDeleting] = useState(false);
+    const [syncing, setSyncing] = useState(false);
 
     const handleTest = () => {
         setTesting(true);
@@ -993,6 +1006,18 @@ function IntegrationsEdit() {
             {
                 preserveScroll: true,
                 onFinish: () => setTesting(false),
+            },
+        );
+    };
+
+    const handleSyncInventory = () => {
+        setSyncing(true);
+        router.post(
+            `/integrations/${integration.id}/sync-inventory`,
+            {},
+            {
+                preserveScroll: true,
+                onFinish: () => setSyncing(false),
             },
         );
     };
@@ -1025,8 +1050,10 @@ function IntegrationsEdit() {
                 <IntegrationSummaryCard
                     integration={integration}
                     onTest={handleTest}
+                    onSyncInventory={integration.type === 'prestashop' ? handleSyncInventory : undefined}
                     onDelete={can?.delete ? handleDelete : undefined}
                     testing={testing}
+                    syncing={syncing}
                     deleting={deleting}
                 />
 

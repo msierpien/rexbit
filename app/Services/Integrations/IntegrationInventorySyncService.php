@@ -48,13 +48,16 @@ class IntegrationInventorySyncService
         }
 
         if (! empty($productIds)) {
-            foreach (array_chunk($productIds, 200) as $chunk) {
+            // Split into chunks of 500 products for manageable job sizes
+            foreach (array_chunk($productIds, 500) as $chunk) {
                 SyncIntegrationInventory::dispatch($integration, $chunk)->onQueue('integrations')->afterCommit();
             }
 
             return;
         }
 
+        // For full sync (no specific products), dispatch without product filter
+        // The job will process all linked products in chunks
         SyncIntegrationInventory::dispatch($integration)->onQueue('integrations')->afterCommit();
     }
 
@@ -89,6 +92,11 @@ class IntegrationInventorySyncService
         }
 
         $totalLinks = $linksQuery->count();
+        
+        // If we have too many products and no specific product filter, split into multiple jobs
+        if (empty($productIds) && $totalLinks > 1000) {
+            return $this->dispatchChunkedSync($integration, $mode, $totalLinks);
+        }
         
         // Create sync log
         $syncLog = IntegrationSyncLog::create([
@@ -139,6 +147,48 @@ class IntegrationInventorySyncService
         $this->updateIntegrationMeta($integration, $mode, $now, $synced);
 
         return ['synced' => $synced, 'sync_log_id' => $syncLog->id];
+    }
+
+    /**
+     * Split large sync into multiple smaller jobs
+     */
+    protected function dispatchChunkedSync(Integration $integration, string $mode, int $totalProducts): array
+    {
+        Log::info('Dispatching chunked sync for large product set', [
+            'integration_id' => $integration->id,
+            'total_products' => $totalProducts,
+            'chunk_size' => 500,
+        ]);
+
+        // Get all product IDs and split them into chunks
+        $allProductIds = $integration->productLinks()
+            ->whereNotNull('external_product_id')
+            ->pluck('product_id')
+            ->unique()
+            ->values()
+            ->all();
+
+        $chunks = array_chunk($allProductIds, 500);
+        $jobCount = count($chunks);
+
+        foreach ($chunks as $index => $chunk) {
+            SyncIntegrationInventory::dispatch($integration, $chunk)
+                ->onQueue('integrations')
+                ->afterCommit();
+        }
+
+        Log::info('Dispatched chunked sync jobs', [
+            'integration_id' => $integration->id,
+            'total_products' => $totalProducts,
+            'job_count' => $jobCount,
+        ]);
+
+        return [
+            'synced' => 0,
+            'chunked' => true,
+            'chunks' => $jobCount,
+            'message' => "Synchronizacja podzielona na {$jobCount} zadań w tle.",
+        ];
     }
 
     protected function syncLocalToPrestashop(Integration $integration, Collection $links, Carbon $timestamp, IntegrationSyncLog $syncLog): int

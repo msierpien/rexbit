@@ -270,12 +270,17 @@ class InventoryCountController extends Controller
             'ean' => 'required|string',
         ]);
 
-        $product = Product::where('ean', $request->string('ean'))->first();
+        $ean = trim($request->string('ean')->toString());
+
+        $product = $request->user()
+            ->products()
+            ->where('ean', $ean)
+            ->first();
 
         if (!$product) {
             return response()->json([
                 'success' => false,
-                'message' => 'Produkt o kodzie EAN ' . $request->string('ean') . ' nie został znaleziony.',
+                'message' => 'Produkt o kodzie EAN ' . $ean . ' nie został znaleziony.',
             ], 404);
         }
 
@@ -306,11 +311,15 @@ class InventoryCountController extends Controller
             // Find product by ID or EAN
             $productId = $request->integer('product_id');
             if (!$productId && $request->has('ean')) {
-                $product = Product::where('ean', $request->string('ean'))->first();
+                $ean = trim($request->string('ean')->toString());
+
+                $product = Product::where('ean', $ean)
+                    ->where('user_id', $inventory_count->user_id)
+                    ->first();
                 if (!$product) {
                     return response()->json([
                         'success' => false,
-                        'message' => 'Produkt o kodzie EAN ' . $request->string('ean') . ' nie został znaleziony.',
+                        'message' => 'Produkt o kodzie EAN ' . $ean . ' nie został znaleziony.',
                     ], 404);
                 }
                 $productId = $product->id;
@@ -352,7 +361,7 @@ class InventoryCountController extends Controller
                     'counted_at' => $item->counted_at?->format('Y-m-d H:i'),
                 ],
             ]);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage(),
@@ -391,7 +400,7 @@ class InventoryCountController extends Controller
                     'counted_at' => $item->counted_at?->format('Y-m-d H:i'),
                 ]),
             ]);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage(),

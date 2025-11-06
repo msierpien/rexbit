@@ -151,55 +151,63 @@ class InventoryCountService
         }
 
         return $this->db->transaction(function () use ($inventoryCount, $includeMissing) {
-            $createdItems = collect();
-
-            if ($includeMissing) {
-                $createdItems = $this->createMissingZeroItems($inventoryCount);
-            }
-
-            $items = $inventoryCount->items()
-                ->whereNull('counted_at')
-                ->get();
-
-            if ($items->isEmpty()) {
-                return $createdItems;
-            }
-
             $now = Carbon::now();
 
-            $updatedItems = $items->map(function (InventoryCountItem $item) use ($now) {
-                $item->counted_quantity = 0;
-                $item->counted_at = $now;
-                $item->save();
-                return $item->fresh(['product']);
-            });
+            $createdItemIds = $includeMissing
+                ? $this->createMissingZeroItems($inventoryCount, $now)
+                : collect();
 
-            return $createdItems->merge($updatedItems);
+            $uncountedItemIds = $inventoryCount->items()
+                ->whereNull('counted_at')
+                ->pluck('id');
+
+            if ($uncountedItemIds->isNotEmpty()) {
+                InventoryCountItem::query()
+                    ->whereIn('id', $uncountedItemIds)
+                    ->update([
+                        'counted_quantity' => 0,
+                        'counted_at' => $now,
+                        'updated_at' => $now,
+                    ]);
+            }
+
+            $allIds = $createdItemIds
+                ->merge($uncountedItemIds)
+                ->unique()
+                ->values();
+
+            if ($allIds->isEmpty()) {
+                return collect();
+            }
+
+            return InventoryCountItem::query()
+                ->with('product')
+                ->whereIn('id', $allIds)
+                ->get();
         });
     }
 
     /**
      * Create missing items (not yet present in inventory_count_items) with counted quantity 0
      *
-     * @return Collection<int, InventoryCountItem>
+     * @return Collection<int, int> Created item identifiers
      */
-    private function createMissingZeroItems(InventoryCount $inventoryCount): Collection
+    private function createMissingZeroItems(InventoryCount $inventoryCount, Carbon $now): Collection
     {
         $existingProductIds = InventoryCountItem::query()
             ->where('inventory_count_id', $inventoryCount->id)
             ->pluck('product_id')
             ->all();
 
-        $created = collect();
+        $createdIds = collect();
         $userId = $inventoryCount->user_id;
         $warehouseId = $inventoryCount->warehouse_location_id;
-        $now = Carbon::now();
 
         Product::query()
             ->where('user_id', $userId)
             ->whereNotIn('id', $existingProductIds)
             ->orderBy('id')
-            ->chunkById(500, function ($products) use ($inventoryCount, $warehouseId, $userId, $now, &$created) {
+            ->chunkById(500, function ($products) use ($inventoryCount, $warehouseId, $userId, $now, &$createdIds) {
                 $productIds = $products->pluck('id')->all();
 
                 $stocks = WarehouseStockTotal::query()
@@ -221,11 +229,11 @@ class InventoryCountService
                         'counted_at' => $now,
                     ]);
 
-                        $created->push($item->fresh(['product']));
+                    $createdIds->push($item->id);
                 }
             });
 
-        return $created;
+        return $createdIds;
     }
 
     /**
@@ -260,7 +268,7 @@ class InventoryCountService
             throw new \InvalidArgumentException('Nie można zatwierdzić inwentaryzacji w statusie: ' . $inventoryCount->status->label());
         }
 
-        return $this->db->transaction(function () use ($inventoryCount, $approver) {
+        $approvedInventory = $this->db->transaction(function () use ($inventoryCount, $approver) {
             // Create adjustment documents for discrepancies
             $this->createAdjustmentDocuments($inventoryCount);
 
@@ -271,6 +279,14 @@ class InventoryCountService
 
             return $inventoryCount->fresh();
         });
+
+        // Sync inventory with integrations (e.g., PrestaShop)
+        $affectedProductIds = $approvedInventory->items->pluck('product_id')->unique()->values()->all();
+        
+        app(\App\Services\Integrations\IntegrationInventorySyncService::class)
+            ->dispatchForUser($approvedInventory->user, $affectedProductIds);
+
+        return $approvedInventory;
     }
 
     /**
