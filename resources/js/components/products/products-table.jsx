@@ -108,6 +108,7 @@ export default function ProductsTable({
                             </th>
                         )}
                         {isColumnVisible('warehouses') && <th className="px-4 py-3">Magazyny</th>}
+                        {isColumnVisible('supplier_availability') && <th className="px-4 py-3">Dostępność u dostawcy</th>}
                         {isColumnVisible('price') && (
                             <th className="px-4 py-3 text-right">
                                 <button
@@ -243,6 +244,47 @@ export default function ProductsTable({
                                         >
                                             Historia
                                         </Button>
+                                    )}
+                                </td>
+                            )}
+                            {isColumnVisible('supplier_availability') && (
+                                <td className="px-4 py-3 text-gray-600">
+                                    {product.supplier_availability ? (
+                                        <div className="space-y-1 text-xs">
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-gray-500">Stan</span>
+                                                <span className={`font-semibold ${product.supplier_availability.is_available ? 'text-green-600' : 'text-red-600'}`}>
+                                                    {product.supplier_availability.is_available 
+                                                        ? `${formatQuantity(product.supplier_availability.stock_quantity)} szt.`
+                                                        : 'Brak'
+                                                    }
+                                                </span>
+                                            </div>
+                                            {product.supplier_availability.delivery_days > 0 && (
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-gray-500">Dostawa</span>
+                                                    <span>{product.supplier_availability.delivery_days} dni</span>
+                                                </div>
+                                            )}
+                                            {product.supplier_availability.purchase_price && (
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-gray-500">Cena zakupu</span>
+                                                    <span className="font-medium">{formatCurrency(product.supplier_availability.purchase_price)}</span>
+                                                </div>
+                                            )}
+                                            {product.supplier_availability.last_checked_at && (
+                                                <div className="text-gray-400 pt-1">
+                                                    <span>Aktualizacja: {new Date(product.supplier_availability.last_checked_at).toLocaleString('pl-PL', { 
+                                                        day: '2-digit', 
+                                                        month: '2-digit',
+                                                        hour: '2-digit',
+                                                        minute: '2-digit'
+                                                    })}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <span className="text-xs text-gray-400">Brak danych</span>
                                     )}
                                 </td>
                             )}

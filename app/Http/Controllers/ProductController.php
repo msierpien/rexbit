@@ -54,7 +54,10 @@ class ProductController extends Controller
             'catalog',
             'manufacturer',
             'warehouseStocks.warehouse',
-            'integrationLinks.integration:id,name',
+            'integrationLinks' => function ($query) {
+                $query->select('integration_product_links.*')
+                    ->with('integration:id,name,type');
+            },
         ]);
         $stockTotals = DB::table('warehouse_stock_totals')
             ->select('product_id')
@@ -198,6 +201,21 @@ class ProductController extends Controller
                         'available' => (float) $stock->on_hand - (float) $stock->reserved,
                     ])
                     ->values(),
+                'supplier_availability' => $product->integrationLinks
+                    ->filter(fn ($link) => $link->supplier_availability !== null)
+                    ->map(fn ($link) => [
+                        'integration_id' => $link->integration_id,
+                        'integration_name' => $link->integration?->name,
+                        'is_available' => $link->isAvailableAtSupplier(),
+                        'stock_quantity' => $link->getSupplierStockQuantity(),
+                        'delivery_days' => $link->getSupplierDeliveryDays(),
+                        'contractor_id' => $link->supplier_availability['contractor_id'] ?? null,
+                        'purchase_price' => $link->supplier_availability['purchase_price'] ?? null,
+                        'last_checked_at' => $link->supplier_availability['last_checked_at'] ?? null,
+                        'available_text' => $link->getPrestashopAvailableLater(),
+                    ])
+                    ->values()
+                    ->first(), // Zwracamy pierwszą dostępność (zazwyczaj jedna integracja dostawcy)
             ]);
 
         return Inertia::render('Products/Index', [
