@@ -310,10 +310,12 @@ class IntegrationController extends Controller
             'label' => $label,
             'description' => match ($type) {
                 IntegrationType::PRESTASHOP => 'Dwukierunkowa synchronizacja produktów i stanów magazynowych z Prestashop.',
+                IntegrationType::PRESTASHOP_DB => 'Szybka synchronizacja przez bezpośrednie połączenie z bazą danych PrestaShop (100x szybciej niż API).',
                 IntegrationType::CSV_XML_IMPORT => 'Elastyczny import produktów i kategorii z plików CSV/XML lub adresów URL.',
             },
             'icon' => match ($type) {
                 IntegrationType::PRESTASHOP => 'store',
+                IntegrationType::PRESTASHOP_DB => 'database',
                 IntegrationType::CSV_XML_IMPORT => 'file-stack',
             },
             'capabilities' => [
@@ -324,7 +326,11 @@ class IntegrationController extends Controller
 
     protected function typeLabel(IntegrationType $type): string
     {
-        return Str::of($type->value)->replace('-', ' ')->title()->toString();
+        return match ($type) {
+            IntegrationType::PRESTASHOP => 'PrestaShop',
+            IntegrationType::PRESTASHOP_DB => 'PrestaShop Database',
+            IntegrationType::CSV_XML_IMPORT => 'CSV/XML Import',
+        };
     }
 
     protected function driverFields(IntegrationType $type, bool $isEdit, array $context = []): array
@@ -395,6 +401,78 @@ class IntegrationController extends Controller
                     'helper' => 'Minimalny interwał 5 minut. Domyślnie 180 (3 godziny).',
                 ],
             ],
+            IntegrationType::PRESTASHOP_DB => [
+                [
+                    'name' => 'db_host',
+                    'label' => 'Host bazy danych',
+                    'type' => 'text',
+                    'required' => true,
+                    'placeholder' => 'localhost lub 127.0.0.1',
+                    'helper' => 'Adres serwera MySQL z PrestaShop.',
+                ],
+                [
+                    'name' => 'db_port',
+                    'label' => 'Port',
+                    'type' => 'number',
+                    'required' => true,
+                    'default' => 3306,
+                    'placeholder' => '3306',
+                    'helper' => 'Port MySQL (domyślnie 3306).',
+                ],
+                [
+                    'name' => 'db_name',
+                    'label' => 'Nazwa bazy danych',
+                    'type' => 'text',
+                    'required' => true,
+                    'placeholder' => 'prestashop',
+                    'helper' => 'Nazwa bazy danych PrestaShop.',
+                ],
+                [
+                    'name' => 'db_username',
+                    'label' => 'Użytkownik',
+                    'type' => 'text',
+                    'required' => true,
+                    'placeholder' => 'prestashop_user',
+                    'helper' => 'Nazwa użytkownika MySQL z uprawnieniami do odczytu i zapisu.',
+                ],
+                [
+                    'name' => 'db_password',
+                    'label' => 'Hasło',
+                    'type' => 'password',
+                    'required' => ! $isEdit,
+                    'placeholder' => $isEdit ? 'Pozostaw puste, aby zachować obecne hasło' : 'Wprowadź hasło do bazy danych',
+                    'helper' => $isEdit
+                        ? 'Pozostaw puste, aby zachować obecne hasło. Hasło jest szyfrowane w bazie danych.'
+                        : 'Hasło użytkownika MySQL. Będzie bezpiecznie zaszyfrowane w bazie danych.',
+                ],
+                [
+                    'name' => 'db_prefix',
+                    'label' => 'Prefiks tabel',
+                    'type' => 'text',
+                    'required' => true,
+                    'default' => 'ps_',
+                    'placeholder' => 'ps_',
+                    'helper' => 'Prefiks tabel PrestaShop (zazwyczaj "ps_").',
+                ],
+                [
+                    'name' => 'id_shop',
+                    'label' => 'ID sklepu',
+                    'type' => 'number',
+                    'required' => true,
+                    'default' => 1,
+                    'placeholder' => '1',
+                    'helper' => 'ID sklepu w PrestaShop (zazwyczaj 1 dla pojedynczego sklepu).',
+                ],
+                [
+                    'name' => 'id_lang',
+                    'label' => 'ID języka',
+                    'type' => 'number',
+                    'required' => true,
+                    'default' => 1,
+                    'placeholder' => '1',
+                    'helper' => 'ID języka w PrestaShop (zazwyczaj 1 dla języka domyślnego).',
+                ],
+            ],
             IntegrationType::CSV_XML_IMPORT => [],
         };
     }
@@ -409,6 +487,16 @@ class IntegrationController extends Controller
                 'inventory_sync_mode' => 'disabled',
                 'inventory_sync_interval_minutes' => 180,
                 'primary_warehouse_id' => null,
+            ],
+            IntegrationType::PRESTASHOP_DB => [
+                'db_host' => 'localhost',
+                'db_port' => 3306,
+                'db_name' => '',
+                'db_username' => '',
+                'db_password' => '',
+                'db_prefix' => 'ps_',
+                'id_shop' => 1,
+                'id_lang' => 1,
             ],
             IntegrationType::CSV_XML_IMPORT => [],
         };

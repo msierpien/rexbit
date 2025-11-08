@@ -128,6 +128,12 @@ function ConfigForm({ integration, fields, errors }) {
         name: integration.name ?? '',
         description: integration.description ?? '',
         ...initialConfig,
+        supplier_min_stock_threshold: integration.meta?.supplier_sync?.min_stock_threshold ?? 20,
+        supplier_sync_availability_text: integration.meta?.supplier_sync?.sync_availability_text ?? true,
+        supplier_available_text: integration.meta?.supplier_sync?.available_text ?? 'Dostępny u dostawcy',
+        supplier_unavailable_text: integration.meta?.supplier_sync?.unavailable_text ?? 'Produkt niedostępny',
+        supplier_delivery_text_template: integration.meta?.supplier_sync?.delivery_text_template ?? 'Wysyłka za :days dni',
+        supplier_sync_only_changed: integration.meta?.supplier_sync?.sync_only_changed ?? true,
     });
 
     useEffect(() => {
@@ -342,6 +348,116 @@ function ConfigForm({ integration, fields, errors }) {
                             })}
                         </div>
                     )}
+
+                    {/* Opcje synchronizacji dostawcy do PrestaShop */}
+                    {integration.type === 'prestashop' && (
+                        <div className="space-y-4 rounded-lg border border-dashed border-blue-200/60 bg-blue-50/30 p-4">
+                            <div>
+                                <h3 className="text-sm font-semibold text-foreground">Synchronizacja dostępności dostawcy</h3>
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                    Kontroluj jak stan magazynowy dostawcy wpływa na dostępność produktów w PrestaShop
+                                </p>
+                            </div>
+                            
+                            <div className="space-y-4">
+                                <div className="space-y-2">
+                                    <label htmlFor="supplier-min-threshold" className="text-sm font-medium text-foreground">
+                                        Minimalny stan u dostawcy (szt)
+                                    </label>
+                                    <Input
+                                        id="supplier-min-threshold"
+                                        type="number"
+                                        min={0}
+                                        placeholder="20"
+                                        value={configForm.data.supplier_min_stock_threshold ?? ''}
+                                        onChange={(event) =>
+                                            configForm.setData('supplier_min_stock_threshold', event.target.value)
+                                        }
+                                    />
+                                    <p className="text-xs text-muted-foreground">
+                                        Jeśli dostawca ma ≥ tę ilość: klient może zamawiać bez stanu w PrestaShop. 
+                                        Jeśli &lt; tę ilość: produkt niedostępny.
+                                    </p>
+                                </div>
+
+                                <div className="flex items-center gap-3">
+                                    <Checkbox
+                                        id="supplier-sync-only-changed"
+                                        checked={Boolean(configForm.data.supplier_sync_only_changed)}
+                                        onCheckedChange={(value) =>
+                                            configForm.setData('supplier_sync_only_changed', Boolean(value))
+                                        }
+                                    />
+                                    <label htmlFor="supplier-sync-only-changed" className="text-sm font-medium text-foreground">
+                                        Synchronizuj tylko zmienione produkty
+                                    </label>
+                                </div>
+                                <p className="text-xs text-muted-foreground pl-7">
+                                    Zamiast 18000 produktów, wysyłaj tylko te które zmieniły dostępność. 
+                                    Znacznie przyspiesza synchronizację.
+                                </p>
+
+                                <div className="flex items-center gap-3">
+                                    <Checkbox
+                                        id="supplier-sync-text"
+                                        checked={Boolean(configForm.data.supplier_sync_availability_text)}
+                                        onCheckedChange={(value) =>
+                                            configForm.setData('supplier_sync_availability_text', Boolean(value))
+                                        }
+                                    />
+                                    <label htmlFor="supplier-sync-text" className="text-sm font-medium text-foreground">
+                                        Aktualizuj tekst dostępności
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div className="space-y-4 pt-2 border-t border-border/60">
+                                <h4 className="text-xs font-semibold text-muted-foreground">Teksty dostępności</h4>
+                                
+                                <div className="space-y-2">
+                                    <label htmlFor="supplier-available-text" className="text-sm font-medium text-foreground">
+                                        Tekst: produkt dostępny (stan ≥ minimum)
+                                    </label>
+                                    <Input
+                                        id="supplier-available-text"
+                                        placeholder="Dostępny u dostawcy"
+                                        value={configForm.data.supplier_available_text ?? ''}
+                                        onChange={(event) =>
+                                            configForm.setData('supplier_available_text', event.target.value)
+                                        }
+                                    />
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label htmlFor="supplier-unavailable-text" className="text-sm font-medium text-foreground">
+                                        Tekst: produkt niedostępny (stan &lt; minimum)
+                                    </label>
+                                    <Input
+                                        id="supplier-unavailable-text"
+                                        placeholder="Produkt niedostępny"
+                                        value={configForm.data.supplier_unavailable_text ?? ''}
+                                        onChange={(event) =>
+                                            configForm.setData('supplier_unavailable_text', event.target.value)
+                                        }
+                                    />
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label htmlFor="supplier-delivery-template" className="text-sm font-medium text-foreground">
+                                        Szablon tekstu dostawy (użyj :days dla dni)
+                                    </label>
+                                    <Input
+                                        id="supplier-delivery-template"
+                                        placeholder="Wysyłka za :days dni"
+                                        value={configForm.data.supplier_delivery_text_template ?? ''}
+                                        onChange={(event) =>
+                                            configForm.setData('supplier_delivery_text_template', event.target.value)
+                                        }
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </CardContent>
                 <CardFooter className="flex items-center justify-end gap-3">
                     <Button type="submit" disabled={configForm.processing}>
@@ -384,6 +500,13 @@ function ProfileCreateForm({ integrationId, catalogs, suppliers }) {
                 missing_behavior: 'skip',
                 default_delivery_days: '3',
                 sync_purchase_price: false,
+                sync_stock_quantity: false,
+                sync_wholesale_price: false,
+                sync_availability_text: true,
+                override_prestashop_stock: false,
+                available_text: 'Dostępny u dostawcy',
+                unavailable_text: 'Produkt niedostępny',
+                delivery_text_template: 'Wysyłka za :days dni',
             },
         },
     });
@@ -401,6 +524,10 @@ function ProfileCreateForm({ integrationId, catalogs, suppliers }) {
             ? parseInt(supplierSettings.default_delivery_days, 10) || 0
             : 0;
         supplierSettings.sync_purchase_price = supplierSettings.sync_purchase_price ? 1 : 0;
+        supplierSettings.sync_stock_quantity = supplierSettings.sync_stock_quantity ? 1 : 0;
+        supplierSettings.sync_wholesale_price = supplierSettings.sync_wholesale_price ? 1 : 0;
+        supplierSettings.sync_availability_text = supplierSettings.sync_availability_text ? 1 : 0;
+        supplierSettings.override_prestashop_stock = supplierSettings.override_prestashop_stock ? 1 : 0;
 
         return {
             ...data,
@@ -638,6 +765,268 @@ function ProfileCreateForm({ integrationId, catalogs, suppliers }) {
                             placeholder="/products/product"
                         />
                     </div>
+
+                    {isSupplierTask && (
+                        <div className="md:col-span-2 space-y-4 rounded-lg border border-dashed border-border/60 p-4">
+                            <div className="grid gap-4 md:grid-cols-3">
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-foreground">Dostawca (opcjonalnie)</label>
+                                    <Select
+                                        value={
+                                            profileForm.data.options?.supplier_availability?.contractor_id
+                                                ? String(profileForm.data.options.supplier_availability.contractor_id)
+                                                : '__any__'
+                                        }
+                                        onValueChange={(value) =>
+                                            profileForm.setData('options', {
+                                                ...profileForm.data.options,
+                                                supplier_availability: {
+                                                    ...profileForm.data.options.supplier_availability,
+                                                    contractor_id: value === '__any__' ? '' : value,
+                                                },
+                                            })
+                                        }
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Wybierz dostawcę" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="__any__">Dowolny</SelectItem>
+                                            {supplierOptions.map((supplier) => (
+                                                <SelectItem key={supplier.id} value={String(supplier.id)}>
+                                                    {supplier.name}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-foreground">Dopasowanie produktów</label>
+                                    <Select
+                                        value={profileForm.data.options?.supplier_availability?.match_by ?? 'sku_or_ean'}
+                                        onValueChange={(value) =>
+                                            profileForm.setData('options', {
+                                                ...profileForm.data.options,
+                                                supplier_availability: {
+                                                    ...profileForm.data.options.supplier_availability,
+                                                    match_by: value,
+                                                },
+                                            })
+                                        }
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="sku_or_ean">SKU lub EAN</SelectItem>
+                                            <SelectItem value="sku">Tylko SKU</SelectItem>
+                                            <SelectItem value="ean">Tylko EAN</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-foreground">Brak produktu w bazie</label>
+                                    <Select
+                                        value={profileForm.data.options?.supplier_availability?.missing_behavior ?? 'skip'}
+                                        onValueChange={(value) =>
+                                            profileForm.setData('options', {
+                                                ...profileForm.data.options,
+                                                supplier_availability: {
+                                                    ...profileForm.data.options.supplier_availability,
+                                                    missing_behavior: value,
+                                                },
+                                            })
+                                        }
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="skip">Pomiń wiersz i odnotuj</SelectItem>
+                                            <SelectItem value="error">Zatrzymaj z błędem</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            </div>
+
+                            <div className="grid gap-4 md:grid-cols-2">
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-foreground">Domyślna liczba dni dostawy</label>
+                                    <Input
+                                        type="number"
+                                        min={0}
+                                        value={profileForm.data.options?.supplier_availability?.default_delivery_days ?? ''}
+                                        onChange={(event) =>
+                                            profileForm.setData('options', {
+                                                ...profileForm.data.options,
+                                                supplier_availability: {
+                                                    ...profileForm.data.options.supplier_availability,
+                                                    default_delivery_days: event.target.value,
+                                                },
+                                            })
+                                        }
+                                    />
+                                </div>
+
+                                <div className="flex items-center gap-3">
+                                    <Checkbox
+                                        id="create-sync-price"
+                                        checked={Boolean(profileForm.data.options?.supplier_availability?.sync_purchase_price)}
+                                        onCheckedChange={(value) =>
+                                            profileForm.setData('options', {
+                                                ...profileForm.data.options,
+                                                supplier_availability: {
+                                                    ...profileForm.data.options.supplier_availability,
+                                                    sync_purchase_price: Boolean(value),
+                                                },
+                                            })
+                                        }
+                                    />
+                                    <label htmlFor="create-sync-price" className="text-sm font-medium text-foreground">
+                                        Aktualizuj cenę zakupu w produktach
+                                    </label>
+                                </div>
+                            </div>
+
+                            {/* Opcje synchronizacji do PrestaShop */}
+                            <div className="space-y-3 pt-4 border-t border-border/60">
+                                <h4 className="text-sm font-semibold text-foreground">Synchronizacja do PrestaShop</h4>
+                                
+                                <div className="space-y-3">
+                                    <div className="flex items-center gap-3">
+                                        <Checkbox
+                                            id="create-sync-stock"
+                                            checked={Boolean(profileForm.data.options?.supplier_availability?.sync_stock_quantity)}
+                                            onCheckedChange={(value) =>
+                                                profileForm.setData('options', {
+                                                    ...profileForm.data.options,
+                                                    supplier_availability: {
+                                                        ...profileForm.data.options.supplier_availability,
+                                                        sync_stock_quantity: Boolean(value),
+                                                    },
+                                                })
+                                            }
+                                        />
+                                        <label htmlFor="create-sync-stock" className="text-sm font-medium text-foreground">
+                                            Synchronizuj stan magazynowy
+                                        </label>
+                                    </div>
+
+                                    <div className="flex items-center gap-3">
+                                        <Checkbox
+                                            id="create-sync-wholesale"
+                                            checked={Boolean(profileForm.data.options?.supplier_availability?.sync_wholesale_price)}
+                                            onCheckedChange={(value) =>
+                                                profileForm.setData('options', {
+                                                    ...profileForm.data.options,
+                                                    supplier_availability: {
+                                                        ...profileForm.data.options.supplier_availability,
+                                                        sync_wholesale_price: Boolean(value),
+                                                    },
+                                                })
+                                            }
+                                        />
+                                        <label htmlFor="create-sync-wholesale" className="text-sm font-medium text-foreground">
+                                            Synchronizuj cenę hurtową (wholesale_price)
+                                        </label>
+                                    </div>
+
+                                    <div className="flex items-center gap-3">
+                                        <Checkbox
+                                            id="create-sync-text"
+                                            checked={profileForm.data.options?.supplier_availability?.sync_availability_text ?? true}
+                                            onCheckedChange={(value) =>
+                                                profileForm.setData('options', {
+                                                    ...profileForm.data.options,
+                                                    supplier_availability: {
+                                                        ...profileForm.data.options.supplier_availability,
+                                                        sync_availability_text: Boolean(value),
+                                                    },
+                                                })
+                                            }
+                                        />
+                                        <label htmlFor="create-sync-text" className="text-sm font-medium text-foreground">
+                                            Synchronizuj tekst dostępności
+                                        </label>
+                                    </div>
+
+                                    <div className="flex items-center gap-3">
+                                        <Checkbox
+                                            id="create-override-stock"
+                                            checked={Boolean(profileForm.data.options?.supplier_availability?.override_prestashop_stock)}
+                                            onCheckedChange={(value) =>
+                                                profileForm.setData('options', {
+                                                    ...profileForm.data.options,
+                                                    supplier_availability: {
+                                                        ...profileForm.data.options.supplier_availability,
+                                                        override_prestashop_stock: Boolean(value),
+                                                    },
+                                                })
+                                            }
+                                        />
+                                        <label htmlFor="create-override-stock" className="text-sm font-medium text-foreground">
+                                            Nadpisz stan PrestaShop stanem dostawcy
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div className="grid gap-4 md:grid-cols-1 pt-2">
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium text-foreground">Tekst: produkt dostępny</label>
+                                        <Input
+                                            placeholder="Dostępny u dostawcy"
+                                            value={profileForm.data.options?.supplier_availability?.available_text ?? ''}
+                                            onChange={(event) =>
+                                                profileForm.setData('options', {
+                                                    ...profileForm.data.options,
+                                                    supplier_availability: {
+                                                        ...profileForm.data.options.supplier_availability,
+                                                        available_text: event.target.value,
+                                                    },
+                                                })
+                                            }
+                                        />
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium text-foreground">Tekst: produkt niedostępny</label>
+                                        <Input
+                                            placeholder="Produkt niedostępny"
+                                            value={profileForm.data.options?.supplier_availability?.unavailable_text ?? ''}
+                                            onChange={(event) =>
+                                                profileForm.setData('options', {
+                                                    ...profileForm.data.options,
+                                                    supplier_availability: {
+                                                        ...profileForm.data.options.supplier_availability,
+                                                        unavailable_text: event.target.value,
+                                                    },
+                                                })
+                                            }
+                                        />
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium text-foreground">Szablon tekstu dostawy (użyj :days dla dni)</label>
+                                        <Input
+                                            placeholder="Wysyłka za :days dni"
+                                            value={profileForm.data.options?.supplier_availability?.delivery_text_template ?? ''}
+                                            onChange={(event) =>
+                                                profileForm.setData('options', {
+                                                    ...profileForm.data.options,
+                                                    supplier_availability: {
+                                                        ...profileForm.data.options.supplier_availability,
+                                                        delivery_text_template: event.target.value,
+                                                    },
+                                                })
+                                            }
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </CardContent>
                 <CardFooter className="flex items-center justify-between">
                     <div className="text-xs text-muted-foreground">
@@ -686,6 +1075,13 @@ function ProfileCard({ integrationId, profile, catalogs, suppliers, mappingMeta 
                 default_delivery_days:
                     profile.options?.supplier_availability?.default_delivery_days ?? '',
                 sync_purchase_price: Boolean(profile.options?.supplier_availability?.sync_purchase_price),
+                sync_stock_quantity: Boolean(profile.options?.supplier_availability?.sync_stock_quantity),
+                sync_wholesale_price: Boolean(profile.options?.supplier_availability?.sync_wholesale_price),
+                sync_availability_text: profile.options?.supplier_availability?.sync_availability_text ?? true,
+                override_prestashop_stock: Boolean(profile.options?.supplier_availability?.override_prestashop_stock),
+                available_text: profile.options?.supplier_availability?.available_text ?? 'Dostępny u dostawcy',
+                unavailable_text: profile.options?.supplier_availability?.unavailable_text ?? 'Produkt niedostępny',
+                delivery_text_template: profile.options?.supplier_availability?.delivery_text_template ?? 'Wysyłka za :days dni',
             },
         },
     });
@@ -708,6 +1104,10 @@ function ProfileCard({ integrationId, profile, catalogs, suppliers, mappingMeta 
                 ? parseInt(supplierSettings.default_delivery_days, 10) || 0
                 : 0;
             supplierSettings.sync_purchase_price = supplierSettings.sync_purchase_price ? 1 : 0;
+            supplierSettings.sync_stock_quantity = supplierSettings.sync_stock_quantity ? 1 : 0;
+            supplierSettings.sync_wholesale_price = supplierSettings.sync_wholesale_price ? 1 : 0;
+            supplierSettings.sync_availability_text = supplierSettings.sync_availability_text ? 1 : 0;
+            supplierSettings.override_prestashop_stock = supplierSettings.override_prestashop_stock ? 1 : 0;
 
             return {
                 ...data,
@@ -979,6 +1379,112 @@ function ProfileCard({ integrationId, profile, catalogs, suppliers, mappingMeta 
                                     >
                                         Aktualizuj cenę zakupu w produktach
                                     </label>
+                                </div>
+                            </div>
+
+                            {/* Opcje synchronizacji do PrestaShop */}
+                            <div className="space-y-3 pt-4 border-t border-border/60">
+                                <h4 className="text-sm font-semibold text-foreground">Synchronizacja do PrestaShop</h4>
+                                
+                                <div className="space-y-3">
+                                    <div className="flex items-center gap-3">
+                                        <Checkbox
+                                            id={`sync-stock-${profile.id}`}
+                                            checked={Boolean(supplierSettings.sync_stock_quantity)}
+                                            onCheckedChange={(value) =>
+                                                updateSupplierOption('sync_stock_quantity', Boolean(value))
+                                            }
+                                        />
+                                        <label
+                                            htmlFor={`sync-stock-${profile.id}`}
+                                            className="text-sm font-medium text-foreground"
+                                        >
+                                            Synchronizuj stan magazynowy
+                                        </label>
+                                    </div>
+
+                                    <div className="flex items-center gap-3">
+                                        <Checkbox
+                                            id={`sync-wholesale-${profile.id}`}
+                                            checked={Boolean(supplierSettings.sync_wholesale_price)}
+                                            onCheckedChange={(value) =>
+                                                updateSupplierOption('sync_wholesale_price', Boolean(value))
+                                            }
+                                        />
+                                        <label
+                                            htmlFor={`sync-wholesale-${profile.id}`}
+                                            className="text-sm font-medium text-foreground"
+                                        >
+                                            Synchronizuj cenę hurtową (wholesale_price)
+                                        </label>
+                                    </div>
+
+                                    <div className="flex items-center gap-3">
+                                        <Checkbox
+                                            id={`sync-text-${profile.id}`}
+                                            checked={Boolean(supplierSettings.sync_availability_text ?? true)}
+                                            onCheckedChange={(value) =>
+                                                updateSupplierOption('sync_availability_text', Boolean(value))
+                                            }
+                                        />
+                                        <label
+                                            htmlFor={`sync-text-${profile.id}`}
+                                            className="text-sm font-medium text-foreground"
+                                        >
+                                            Synchronizuj tekst dostępności
+                                        </label>
+                                    </div>
+
+                                    <div className="flex items-center gap-3">
+                                        <Checkbox
+                                            id={`override-stock-${profile.id}`}
+                                            checked={Boolean(supplierSettings.override_prestashop_stock)}
+                                            onCheckedChange={(value) =>
+                                                updateSupplierOption('override_prestashop_stock', Boolean(value))
+                                            }
+                                        />
+                                        <label
+                                            htmlFor={`override-stock-${profile.id}`}
+                                            className="text-sm font-medium text-foreground"
+                                        >
+                                            Nadpisz stan PrestaShop stanem dostawcy
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div className="grid gap-4 md:grid-cols-1 pt-2">
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium text-foreground">Tekst: produkt dostępny</label>
+                                        <Input
+                                            placeholder="Dostępny u dostawcy"
+                                            value={supplierSettings.available_text ?? ''}
+                                            onChange={(event) =>
+                                                updateSupplierOption('available_text', event.target.value)
+                                            }
+                                        />
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium text-foreground">Tekst: produkt niedostępny</label>
+                                        <Input
+                                            placeholder="Produkt niedostępny"
+                                            value={supplierSettings.unavailable_text ?? ''}
+                                            onChange={(event) =>
+                                                updateSupplierOption('unavailable_text', event.target.value)
+                                            }
+                                        />
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium text-foreground">Szablon tekstu dostawy (użyj :days dla dni)</label>
+                                        <Input
+                                            placeholder="Wysyłka za :days dni"
+                                            value={supplierSettings.delivery_text_template ?? ''}
+                                            onChange={(event) =>
+                                                updateSupplierOption('delivery_text_template', event.target.value)
+                                            }
+                                        />
+                                    </div>
                                 </div>
                             </div>
                         </div>

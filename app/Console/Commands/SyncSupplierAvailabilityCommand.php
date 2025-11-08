@@ -3,7 +3,10 @@
 namespace App\Console\Commands;
 
 use App\Enums\IntegrationType;
+use App\Integrations\IntegrationService;
 use App\Models\Integration;
+use App\Models\IntegrationTask;
+use App\Services\Integrations\PrestashopDatabaseSyncService;
 use App\Services\Integrations\SupplierAvailabilitySyncService;
 use Illuminate\Console\Command;
 
@@ -18,6 +21,7 @@ class SyncSupplierAvailabilityCommand extends Command
 
     public function __construct(
         protected SupplierAvailabilitySyncService $syncService,
+        protected IntegrationService $integrationService,
     ) {
         parent::__construct();
     }
@@ -34,7 +38,7 @@ class SyncSupplierAvailabilityCommand extends Command
 
         /** @var Integration|null $integration */
         $integration = Integration::query()
-            ->where('type', IntegrationType::PRESTASHOP->value)
+            ->whereIn('type', [IntegrationType::PRESTASHOP->value, IntegrationType::PRESTASHOP_DB->value])
             ->find($integrationId);
 
         if (! $integration) {
@@ -47,21 +51,29 @@ class SyncSupplierAvailabilityCommand extends Command
         $limit = $this->option('limit') ? max(1, (int) $this->option('limit')) : null;
 
         $this->info(sprintf(
-            'Start synchronizacji dostępności (integration_id=%d, contractor=%s, limit=%s)',
+            'Start synchronizacji dostępności (integration_id=%d, type=%s, contractor=%s, limit=%s)',
             $integration->id,
+            $integration->type->value,
             $contractorId ? (string) $contractorId : '—',
             $limit ? (string) $limit : '∞'
         ));
 
-        $stats = $this->syncService->syncToPrestashop($integration, $contractorId, [
-            'limit' => $limit,
-        ]);
+        // Use database sync for PRESTASHOP_DB type
+        if ($integration->type === IntegrationType::PRESTASHOP_DB) {
+            $stats = $this->syncUsingDatabase($integration, $limit);
+        } else {
+            // Use API sync for regular PRESTASHOP type
+            $stats = $this->syncService->syncToPrestashop($integration, $contractorId, [
+                'limit' => $limit,
+            ]);
+        }
 
         $this->info(sprintf(
-            'Zakończono synchronizację. Sukcesy: %d, błędy: %d, łącznie: %d',
-            $stats['synced'],
-            $stats['failed'],
-            $stats['total']
+            'Zakończono synchronizację. Sukcesy: %d, pominięto: %d, błędy: %d, łącznie: %d',
+            $stats['synced'] ?? $stats['success'] ?? 0,
+            $stats['skipped'] ?? 0,
+            $stats['failed'] ?? $stats['errors'] ?? 0,
+            $stats['total'] ?? ($stats['success'] + $stats['skipped'] + $stats['errors'])
         ));
 
         if (! empty($stats['errors'])) {
@@ -78,4 +90,19 @@ class SyncSupplierAvailabilityCommand extends Command
 
         return self::SUCCESS;
     }
+
+    protected function syncUsingDatabase(Integration $integration, ?int $limit): array
+    {
+        // Create a temporary task for database sync
+        $task = new IntegrationTask([
+            'integration_id' => $integration->id,
+            'type' => 'manual-sync',
+        ]);
+        $task->integration = $integration;
+
+        $dbSyncService = new PrestashopDatabaseSyncService($task, $this->integrationService);
+        
+        return $dbSyncService->syncToPrestashop($limit);
+    }
 }
+

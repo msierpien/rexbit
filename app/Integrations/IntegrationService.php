@@ -64,9 +64,29 @@ class IntegrationService
 
         $payload = $this->validatePayload($driver, $attributes, $integration);
 
+        // Extract supplier sync settings if present
+        $meta = $integration->meta ?? [];
+        if (isset($attributes['supplier_min_stock_threshold']) || 
+            isset($attributes['supplier_sync_availability_text']) ||
+            isset($attributes['supplier_sync_only_changed']) ||
+            isset($attributes['supplier_available_text']) ||
+            isset($attributes['supplier_unavailable_text']) ||
+            isset($attributes['supplier_delivery_text_template'])) {
+            
+            $meta['supplier_sync'] = [
+                'min_stock_threshold' => (int) ($attributes['supplier_min_stock_threshold'] ?? 20),
+                'sync_availability_text' => (bool) ($attributes['supplier_sync_availability_text'] ?? true),
+                'sync_only_changed' => (bool) ($attributes['supplier_sync_only_changed'] ?? true),
+                'available_text' => $attributes['supplier_available_text'] ?? 'Dostępny u dostawcy',
+                'unavailable_text' => $attributes['supplier_unavailable_text'] ?? 'Produkt niedostępny',
+                'delivery_text_template' => $attributes['supplier_delivery_text_template'] ?? 'Wysyłka za :days dni',
+            ];
+        }
+
         $integration->fill([
             'name' => $payload['name'],
             'config' => $this->prepareConfigForStorage($driver, $payload, $integration),
+            'meta' => $meta,
         ])->save();
 
         return $integration->refresh();
@@ -134,14 +154,23 @@ class IntegrationService
         $sanitized = $driver->sanitizeConfig($payload);
         $existing = $integration?->config ?? [];
 
-        $config = array_merge($existing, Arr::except($sanitized, ['api_key']));
+        // Merge config but exclude encrypted fields
+        $config = array_merge($existing, Arr::except($sanitized, ['api_key', 'db_password']));
 
+        // Handle api_key encryption (for PrestaShop API integration)
         $apiKey = Arr::get($sanitized, 'api_key');
-
         if ($apiKey) {
             $config['api_key'] = Crypt::encryptString($apiKey);
         } elseif ($integration && isset($existing['api_key'])) {
             $config['api_key'] = $existing['api_key'];
+        }
+
+        // Handle db_password encryption (for PrestaShop Database integration)
+        $dbPassword = Arr::get($sanitized, 'db_password');
+        if ($dbPassword) {
+            $config['db_password'] = Crypt::encryptString($dbPassword);
+        } elseif ($integration && isset($existing['db_password'])) {
+            $config['db_password'] = $existing['db_password'];
         }
 
         return $config;
@@ -156,12 +185,26 @@ class IntegrationService
     {
         $config = $integration->config ?? [];
 
+        // Decrypt api_key (for PrestaShop API integration)
         if (isset($config['api_key'])) {
             try {
                 $config['api_key'] = Crypt::decryptString($config['api_key']);
             } catch (\Throwable $exception) {
                 throw new IntegrationConnectionException(
                     'Nie udało się odszyfrować klucza API integracji.',
+                    (int) $exception->getCode(),
+                    $exception
+                );
+            }
+        }
+
+        // Decrypt db_password (for PrestaShop Database integration)
+        if (isset($config['db_password'])) {
+            try {
+                $config['db_password'] = Crypt::decryptString($config['db_password']);
+            } catch (\Throwable $exception) {
+                throw new IntegrationConnectionException(
+                    'Nie udało się odszyfrować hasła do bazy danych.',
                     (int) $exception->getCode(),
                     $exception
                 );
