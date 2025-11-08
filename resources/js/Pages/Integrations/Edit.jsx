@@ -33,9 +33,10 @@ import {
     MapPin,
     CalendarClock,
     PackageCheck,
+    Truck,
 } from 'lucide-react';
 
-function IntegrationSummaryCard({ integration, onTest, onDelete, onSyncInventory, testing, deleting, syncing }) {
+function IntegrationSummaryCard({ integration, onTest, onDelete, onSyncInventory, onSyncSupplierAvailability, testing, deleting, syncing, syncingSupplier }) {
     return (
         <Card className="border border-border shadow-sm">
             <CardHeader>
@@ -84,6 +85,17 @@ function IntegrationSummaryCard({ integration, onTest, onDelete, onSyncInventory
                     >
                         <PackageCheck className={`mr-2 size-4 ${syncing ? 'animate-pulse' : ''}`} />
                         {syncing ? 'Synchronizuję...' : 'Synchronizuj stany'}
+                    </Button>
+                )}
+                {(integration.type === 'prestashop' || integration.type === 'prestashop-db') && onSyncSupplierAvailability && (
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={onSyncSupplierAvailability}
+                        disabled={syncingSupplier}
+                    >
+                        <Truck className={`mr-2 size-4 ${syncingSupplier ? 'animate-pulse' : ''}`} />
+                        {syncingSupplier ? 'Synchronizuję...' : 'Synchronizuj dostępność'}
                     </Button>
                 )}
                 <Button
@@ -1738,6 +1750,7 @@ function IntegrationsEdit() {
     const [testing, setTesting] = useState(false);
     const [deleting, setDeleting] = useState(false);
     const [syncing, setSyncing] = useState(false);
+    const [syncingSupplier, setSyncingSupplier] = useState(false);
 
     const handleTest = () => {
         setTesting(true);
@@ -1755,6 +1768,18 @@ function IntegrationsEdit() {
         setSyncing(true);
         router.post(
             `/integrations/${integration.id}/sync-inventory`,
+            {},
+            {
+                preserveScroll: true,
+                onFinish: () => setSyncing(false),
+            },
+        );
+    };
+
+    const handleSyncSupplierAvailability = () => {
+        setSyncingSupplier(true);
+        router.post(
+            `/integrations/${integration.id}/sync-supplier-availability`,
             {},
             {
                 preserveScroll: true,
@@ -1793,9 +1818,11 @@ function IntegrationsEdit() {
                     integration={integration}
                     onTest={handleTest}
                     onSyncInventory={integration.type === 'prestashop' ? handleSyncInventory : undefined}
+                    onSyncSupplierAvailability={(integration.type === 'prestashop' || integration.type === 'prestashop-db') ? handleSyncSupplierAvailability : undefined}
                     onDelete={can?.delete ? handleDelete : undefined}
                     testing={testing}
                     syncing={syncing}
+                    syncingSupplier={syncingSupplier}
                     deleting={deleting}
                 />
 

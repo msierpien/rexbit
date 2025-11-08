@@ -628,4 +628,19 @@ class IntegrationController extends Controller
 
         return back()->with('success', $message);
     }
+
+    public function syncSupplierAvailability(Request $request, Integration $integration): RedirectResponse
+    {
+        if (!in_array($integration->type, [IntegrationType::PRESTASHOP, IntegrationType::PRESTASHOP_DB])) {
+            return back()->with('error', 'Synchronizacja dostępności dostawcy jest dostępna tylko dla integracji PrestaShop.');
+        }
+
+        $this->authorize('update', $integration);
+
+        // Dispatch job to sync supplier availability
+        \App\Jobs\SyncSupplierAvailabilityJob::dispatch($integration->id);
+
+        return back()->with('success', 'Synchronizacja dostępności dostawcy została uruchomiona w tle.');
+    }
 }
+
