@@ -29,8 +29,9 @@ class Kernel extends ConsoleKernel
             ->withoutOverlapping()
             ->runInBackground();
 
-        // Synchronize supplier availability to Prestashop (every 30 minutes)
-        $schedule->command('supplier:sync-availability --prestashop=1')
+        // Synchronize supplier availability to Prestashop Database (every 30 minutes)
+        // Using direct database connection for 10x faster sync
+        $schedule->command('supplier:sync-availability --prestashop=7')
             ->everyThirtyMinutes()
             ->withoutOverlapping()
             ->runInBackground();

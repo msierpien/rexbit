@@ -37,6 +37,7 @@ class PrestashopDatabaseIntegrationDriver implements IntegrationDriver
             'db_prefix' => ['required', 'string', 'max:10'],
             'id_shop' => ['nullable', 'integer', 'min:1'],
             'id_lang' => ['nullable', 'integer', 'min:1'],
+            'product_listing_enabled' => ['sometimes', 'boolean'],
         ];
     }
 
@@ -55,6 +56,7 @@ class PrestashopDatabaseIntegrationDriver implements IntegrationDriver
             'db_prefix' => 'ps_',
             'id_shop' => 1,
             'id_lang' => 1,
+            'product_listing_enabled' => false,
         ];
     }
 
@@ -80,6 +82,10 @@ class PrestashopDatabaseIntegrationDriver implements IntegrationDriver
             'db_prefix' => $dbPrefix,
             'id_shop' => $idShop > 0 ? $idShop : 1,
             'id_lang' => $idLang > 0 ? $idLang : 1,
+            'product_listing_enabled' => filter_var(
+                Arr::get($config, 'product_listing_enabled', false),
+                FILTER_VALIDATE_BOOL
+            ),
         ];
 
         // Only include password if provided

@@ -90,7 +90,7 @@ class PrestashopDatabaseSyncService
         $query = Product::query()
             ->whereHas('integrationLinks', function ($q) {
                 $q->where('integration_id', $this->task->integration_id)
-                    ->whereNotNull('external_id');
+                    ->whereNotNull('external_product_id');
             })
             ->with(['integrationLinks' => function ($q) {
                 $q->where('integration_id', $this->task->integration_id);

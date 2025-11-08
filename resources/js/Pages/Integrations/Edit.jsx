@@ -75,7 +75,7 @@ function IntegrationSummaryCard({ integration, onTest, onDelete, onSyncInventory
                 </div>
             </CardContent>
             <CardFooter className="flex flex-wrap items-center justify-end gap-3">
-                {integration.type === 'prestashop' && onSyncInventory && (
+                {(integration.type === 'prestashop' || integration.type === 'prestashop-db') && onSyncInventory && (
                     <Button
                         variant="outline"
                         size="sm"
@@ -350,12 +350,15 @@ function ConfigForm({ integration, fields, errors }) {
                     )}
 
                     {/* Opcje synchronizacji dostawcy do PrestaShop */}
-                    {integration.type === 'prestashop' && (
+                    {(integration.type === 'prestashop' || integration.type === 'prestashop-db') && (
                         <div className="space-y-4 rounded-lg border border-dashed border-blue-200/60 bg-blue-50/30 p-4">
                             <div>
                                 <h3 className="text-sm font-semibold text-foreground">Synchronizacja dostępności dostawcy</h3>
                                 <p className="mt-1 text-xs text-muted-foreground">
                                     Kontroluj jak stan magazynowy dostawcy wpływa na dostępność produktów w PrestaShop
+                                    {integration.type === 'prestashop-db' && (
+                                        <span className="ml-1 font-medium text-blue-600">(100x szybsza przez bazę danych)</span>
+                                    )}
                                 </p>
                             </div>
                             

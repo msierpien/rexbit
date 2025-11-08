@@ -188,18 +188,39 @@ class IntegrationController extends Controller
                 $this->presentIntegration($integration),
                 [
                     'description' => Arr::get($integration->config, 'description'),
-                    'config' => [
-                        'base_url' => Arr::get($integration->config, 'base_url'),
-                        'description' => Arr::get($integration->config, 'description'),
-                        'product_listing_enabled' => Arr::get($integration->config, 'product_listing_enabled', false),
-                        'inventory_sync_mode' => Arr::get($integration->config, 'inventory_sync_mode', 'disabled'),
-                        'primary_warehouse_id' => Arr::get($integration->config, 'primary_warehouse_id'),
-                        'inventory_sync_interval_minutes' => Arr::get(
-                            $integration->config,
-                            'inventory_sync_interval_minutes',
-                            180
-                        ),
-                    ],
+                    'config' => array_merge(
+                        [
+                            'base_url' => Arr::get($integration->config, 'base_url'),
+                            'description' => Arr::get($integration->config, 'description'),
+                            'product_listing_enabled' => Arr::get($integration->config, 'product_listing_enabled', false),
+                            'inventory_sync_mode' => Arr::get($integration->config, 'inventory_sync_mode', 'disabled'),
+                            'primary_warehouse_id' => Arr::get($integration->config, 'primary_warehouse_id'),
+                            'inventory_sync_interval_minutes' => Arr::get(
+                                $integration->config,
+                                'inventory_sync_interval_minutes',
+                                180
+                            ),
+                        ],
+                        // Database config for prestashop-db type
+                        $integration->type === IntegrationType::PRESTASHOP_DB ? [
+                            'db_host' => Arr::get($integration->config, 'db_host'),
+                            'db_port' => Arr::get($integration->config, 'db_port'),
+                            'db_name' => Arr::get($integration->config, 'db_name'),
+                            'db_username' => Arr::get($integration->config, 'db_username'),
+                            'db_prefix' => Arr::get($integration->config, 'db_prefix'),
+                            'id_shop' => Arr::get($integration->config, 'id_shop'),
+                            'id_lang' => Arr::get($integration->config, 'id_lang'),
+                        ] : [],
+                        // Supplier sync settings from meta
+                        [
+                            'supplier_min_stock_threshold' => Arr::get($integration->meta, 'supplier_sync.min_stock_threshold', 20),
+                            'supplier_sync_availability_text' => Arr::get($integration->meta, 'supplier_sync.sync_availability_text', true),
+                            'supplier_sync_only_changed' => Arr::get($integration->meta, 'supplier_sync.sync_only_changed', true),
+                            'supplier_available_text' => Arr::get($integration->meta, 'supplier_sync.available_text', 'Dostępny u dostawcy'),
+                            'supplier_unavailable_text' => Arr::get($integration->meta, 'supplier_sync.unavailable_text', 'Produkt niedostępny'),
+                            'supplier_delivery_text_template' => Arr::get($integration->meta, 'supplier_sync.delivery_text_template', 'Wysyłka za :days dni'),
+                        ]
+                    ),
                     'timestamps' => [
                         'created_at' => $integration->created_at?->toDateTimeString(),
                         'created_at_human' => $integration->created_at?->diffForHumans(),
@@ -472,6 +493,13 @@ class IntegrationController extends Controller
                     'placeholder' => '1',
                     'helper' => 'ID języka w PrestaShop (zazwyczaj 1 dla języka domyślnego).',
                 ],
+                [
+                    'name' => 'product_listing_enabled',
+                    'label' => 'Udostępnij listę produktów',
+                    'type' => 'checkbox',
+                    'helper' => 'Po zaznaczeniu integracja udostępnia listę produktów (możliwość powiązania przez panel produktów).',
+                    'default' => false,
+                ],
             ],
             IntegrationType::CSV_XML_IMPORT => [],
         };
@@ -497,6 +525,7 @@ class IntegrationController extends Controller
                 'db_prefix' => 'ps_',
                 'id_shop' => 1,
                 'id_lang' => 1,
+                'product_listing_enabled' => false,
             ],
             IntegrationType::CSV_XML_IMPORT => [],
         };

@@ -134,7 +134,7 @@ class ProductController extends Controller
         }
 
         $integrationOptions = $request->user()->integrations()
-            ->where('type', IntegrationType::PRESTASHOP->value)
+            ->whereIn('type', [IntegrationType::PRESTASHOP->value, IntegrationType::PRESTASHOP_DB->value])
             ->orderBy('name')
             ->get()
             ->filter(fn (Integration $integration) => (bool) Arr::get($integration->config, 'product_listing_enabled', false))
