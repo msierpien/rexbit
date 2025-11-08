@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Jobs\ProcessIntegrationImportChunk;
+use App\Jobs\ProcessSupplierAvailabilityChunk;
 use App\Models\IntegrationTask;
 use App\Services\Integrations\Import\ImportParserFactory;
 use App\Services\Integrations\Import\ImportSchedulerService;
@@ -39,20 +40,32 @@ class ExecuteIntegrationTask implements ShouldQueue
             $resolved = $sourceResolver->resolve($task);
             $parser = $parserFactory->make($task->format);
 
+            $resourceType = $task->resource_type ?? 'products';
+
             // Extract mappings from JSON format
-            $productMappings = collect($task->mappings ?? [])
+            $mappingCollection = collect($task->mappings ?? []);
+
+            $productMappings = $mappingCollection
                 ->where('target_type', 'product')
                 ->pluck('source_field', 'target_field')
                 ->toArray();
             
-            $categoryMappings = collect($task->mappings ?? [])
+            $categoryMappings = $mappingCollection
                 ->where('target_type', 'category')
+                ->pluck('source_field', 'target_field')
+                ->toArray();
+
+            $availabilityMappings = $mappingCollection
+                ->where('target_type', 'supplier_availability')
                 ->pluck('source_field', 'target_field')
                 ->toArray();
 
             $runService->addLog($run, "Rozpoczęto import z {$task->source_location}");
             $runService->addLog($run, "Mappings produktów: " . count($productMappings));
             $runService->addLog($run, "Mappings kategorii: " . count($categoryMappings));
+            if ($resourceType === 'supplier-availability') {
+                $runService->addLog($run, "Mappings dostępności dostawcy: " . count($availabilityMappings));
+            }
 
             // Parse file and create import chunks
             $records = $parser->iterate($resolved['path'], [
@@ -61,7 +74,9 @@ class ExecuteIntegrationTask implements ShouldQueue
                 'record_path' => Arr::get($task->options, 'record_path'),
             ]);
 
-            $chunkSize = 50;
+            $chunkSize = $resourceType === 'supplier-availability'
+                ? 200
+                : 50;
             $chunkJobs = [];
             $productCatalogId = $task->catalog_id;
             $currentChunk = [];
@@ -73,12 +88,15 @@ class ExecuteIntegrationTask implements ShouldQueue
                 $currentChunk[] = $record;
 
                 if (count($currentChunk) >= $chunkSize) {
-                    $chunkJobs[] = new ProcessIntegrationImportChunk(
+                    $chunkJobs[] = $this->makeChunkJob(
+                        $resourceType,
                         $run->id,
                         $currentChunk,
                         $productMappings,
                         $categoryMappings,
+                        $availabilityMappings,
                         $productCatalogId,
+                        $task->options ?? []
                     );
                     $currentChunk = [];
                 }
@@ -86,12 +104,15 @@ class ExecuteIntegrationTask implements ShouldQueue
 
             // Add remaining records as final chunk
             if (!empty($currentChunk)) {
-                $chunkJobs[] = new ProcessIntegrationImportChunk(
+                $chunkJobs[] = $this->makeChunkJob(
+                    $resourceType,
                     $run->id,
                     $currentChunk,
                     $productMappings,
                     $categoryMappings,
+                    $availabilityMappings,
                     $productCatalogId,
+                    $task->options ?? []
                 );
             }
 
@@ -122,5 +143,33 @@ class ExecuteIntegrationTask implements ShouldQueue
                 @unlink($resolved['path']);
             }
         }
+    }
+
+    protected function makeChunkJob(
+        string $resourceType,
+        int $runId,
+        array $rows,
+        array $productMappings,
+        array $categoryMappings,
+        array $availabilityMappings,
+        ?int $catalogId,
+        array $options
+    ): ShouldQueue {
+        if ($resourceType === 'supplier-availability') {
+            return new ProcessSupplierAvailabilityChunk(
+                $runId,
+                $rows,
+                $availabilityMappings,
+                $options
+            );
+        }
+
+        return new ProcessIntegrationImportChunk(
+            $runId,
+            $rows,
+            $productMappings,
+            $categoryMappings,
+            $catalogId,
+        );
     }
 }

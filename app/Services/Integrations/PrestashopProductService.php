@@ -346,136 +346,10 @@ class PrestashopProductService
      */
     public function updateProductStock(Integration $integration, string $externalProductId, float $quantity): array
     {
-        if ($integration->type !== IntegrationType::PRESTASHOP) {
-            throw new \InvalidArgumentException('Nieobsługiwany typ integracji dla aktualizacji stanów.');
-        }
-
-        $config = $this->integrationService->runtimeConfig($integration);
-
-        try {
-            // Krok 1: Pobierz stock_available_id z produktu
-            $response = $this->performProductRequest($config, [
-                'output_format' => 'JSON',
-                'display' => 'full',
-                'filter[id]' => sprintf('[%s]', $externalProductId),
-                'limit' => '0,1',
-            ]);
-
-            $items = Arr::get($response->json(), 'products', []);
-
-            if (empty($items)) {
-                return [
-                    'success' => false,
-                    'error' => "Product {$externalProductId} not found in Prestashop",
-                ];
-            }
-
-            $stockAvailableId = Arr::get($items[0], 'associations.stock_availables.0.id');
-
-            if (!$stockAvailableId) {
-                return [
-                    'success' => false,
-                    'error' => "No stock_available found for product {$externalProductId}",
-                ];
-            }
-
-            // Krok 2: Pobierz pełny XML stock_available
-            $stockXmlResponse = Http::withBasicAuth($config['api_key'], '')
-                ->timeout(30)
-                ->get($this->endpoint($config['base_url']) . "/stock_availables/{$stockAvailableId}");
-
-            if ($stockXmlResponse->failed()) {
-                return [
-                    'success' => false,
-                    'error' => 'Failed to fetch stock_available XML: ' . $stockXmlResponse->body(),
-                ];
-            }
-
-            // Krok 3: Parsuj i zaktualizuj quantity w XML używając DOM
-            libxml_use_internal_errors(true);
-            
-            $dom = new \DOMDocument();
-            $dom->preserveWhiteSpace = false;
-            $dom->formatOutput = false;
-            $dom->loadXML($stockXmlResponse->body());
-            
-            if (!$dom) {
-                $errors = libxml_get_errors();
-                libxml_clear_errors();
-                return [
-                    'success' => false,
-                    'error' => 'Invalid XML response: ' . json_encode($errors),
-                ];
-            }
-
-            // Znajdź i zaktualizuj quantity
-            $quantityNode = $dom->getElementsByTagName('quantity')->item(0);
-            if ($quantityNode) {
-                // Usuń wszystkie child nodes (włącznie z CDATA)
-                while ($quantityNode->firstChild) {
-                    $quantityNode->removeChild($quantityNode->firstChild);
-                }
-                // Dodaj nowy text node (NIE CDATA)
-                $textNode = $dom->createTextNode((string)(int) $quantity);
-                $quantityNode->appendChild($textNode);
-            }
-            
-            // Znajdź i zaktualizuj out_of_stock
-            $outOfStockNode = $dom->getElementsByTagName('out_of_stock')->item(0);
-            if ($outOfStockNode) {
-                // Usuń wszystkie child nodes (włącznie z CDATA)
-                while ($outOfStockNode->firstChild) {
-                    $outOfStockNode->removeChild($outOfStockNode->firstChild);
-                }
-                // Dodaj nowy text node (NIE CDATA)
-                $textNode = $dom->createTextNode((string)((int) $quantity > 0 ? 0 : 1));
-                $outOfStockNode->appendChild($textNode);
-            }
-
-            // Konwertuj z powrotem do XML
-            $xmlString = $dom->saveXML();
-
-            // Krok 4: Wyślij PUT request z zaktualizowanym XML
-            $updateResponse = Http::withBasicAuth($config['api_key'], '')
-                ->withBody($xmlString, 'application/xml; charset=UTF-8')
-                ->timeout(30)
-                ->put($this->endpoint($config['base_url']) . "/stock_availables/{$stockAvailableId}");
-                
-            if ($updateResponse->failed()) {
-                return [
-                    'success' => false,
-                    'error' => 'Failed to update stock_available: ' . $updateResponse->body(),
-                ];
-            }
-
-            return [
-                'success' => true,
-                'stock_available_id' => (int) $stockAvailableId,
-            ];
-        } catch (RequestException $e) {
-            \Log::error('Prestashop stock update failed - Request exception', [
-                'product_id' => $externalProductId,
-                'quantity' => $quantity,
-                'error' => $e->getMessage(),
-                'response' => $e->response?->body(),
-            ]);
-
-            return [
-                'success' => false,
-                'error' => 'Request failed: ' . $e->getMessage(),
-            ];
-        } catch (\Exception $e) {
-            \Log::error('Prestashop stock update failed', [
-                'product_id' => $externalProductId,
-                'quantity' => $quantity,
-                'error' => $e->getMessage(),
-            ]);
-
-            return [
-                'success' => false,
-                'error' => $e->getMessage(),
-            ];
-        }
+        return $this->mutateStockAvailable($integration, $externalProductId, function (\DOMDocument $dom) use ($quantity): void {
+            $this->replaceNodeValue($dom, 'quantity', (string) (int) $quantity);
+            $this->replaceNodeValue($dom, 'out_of_stock', (string) ((int) $quantity > 0 ? 0 : 1));
+        });
     }
 
     /**
@@ -537,5 +411,143 @@ class PrestashopProductService
         }
 
         return $results;
+    }
+
+    public function updateProductAvailability(
+        Integration $integration,
+        string $externalProductId,
+        int $outOfStock,
+        string $availableLater
+    ): array {
+        return $this->mutateStockAvailable($integration, $externalProductId, function (\DOMDocument $dom) use ($outOfStock, $availableLater): void {
+            $value = max(0, min(2, $outOfStock));
+            $this->replaceNodeValue($dom, 'out_of_stock', (string) $value);
+            $this->replaceNodeValue($dom, 'available_later', $availableLater);
+        });
+    }
+
+    protected function mutateStockAvailable(
+        Integration $integration,
+        string $externalProductId,
+        callable $mutator
+    ): array {
+        if ($integration->type !== IntegrationType::PRESTASHOP) {
+            throw new \InvalidArgumentException('Nieobsługiwany typ integracji dla aktualizacji stanów.');
+        }
+
+        $config = $this->integrationService->runtimeConfig($integration);
+
+        try {
+            $response = $this->performProductRequest($config, [
+                'output_format' => 'JSON',
+                'display' => 'full',
+                'filter[id]' => sprintf('[%s]', $externalProductId),
+                'limit' => '0,1',
+            ]);
+
+            $items = Arr::get($response->json(), 'products', []);
+
+            if (empty($items)) {
+                return [
+                    'success' => false,
+                    'error' => "Product {$externalProductId} not found in Prestashop",
+                ];
+            }
+
+            $stockAvailableId = Arr::get($items[0], 'associations.stock_availables.0.id');
+
+            if (! $stockAvailableId) {
+                return [
+                    'success' => false,
+                    'error' => "No stock_available found for product {$externalProductId}",
+                ];
+            }
+
+            $stockXmlResponse = Http::withBasicAuth($config['api_key'], '')
+                ->timeout(30)
+                ->get($this->endpoint($config['base_url']) . "/stock_availables/{$stockAvailableId}");
+
+            if ($stockXmlResponse->failed()) {
+                return [
+                    'success' => false,
+                    'error' => 'Failed to fetch stock_available XML: ' . $stockXmlResponse->body(),
+                ];
+            }
+
+            libxml_use_internal_errors(true);
+
+            $dom = new \DOMDocument();
+            $dom->preserveWhiteSpace = false;
+            $dom->formatOutput = false;
+            $dom->loadXML($stockXmlResponse->body());
+
+            if (! $dom || ! $dom->documentElement) {
+                $errors = libxml_get_errors();
+                libxml_clear_errors();
+                return [
+                    'success' => false,
+                    'error' => 'Invalid XML response: ' . json_encode($errors),
+                ];
+            }
+
+            $mutator($dom);
+
+            libxml_clear_errors();
+
+            $xmlString = $dom->saveXML();
+
+            $updateResponse = Http::withBasicAuth($config['api_key'], '')
+                ->withBody($xmlString, 'application/xml; charset=UTF-8')
+                ->timeout(30)
+                ->put($this->endpoint($config['base_url']) . "/stock_availables/{$stockAvailableId}");
+
+            if ($updateResponse->failed()) {
+                return [
+                    'success' => false,
+                    'error' => 'Failed to update stock_available: ' . $updateResponse->body(),
+                ];
+            }
+
+            return [
+                'success' => true,
+                'stock_available_id' => (int) $stockAvailableId,
+            ];
+        } catch (RequestException $e) {
+            \Log::error('Prestashop stock update failed - Request exception', [
+                'product_id' => $externalProductId,
+                'error' => $e->getMessage(),
+                'response' => $e->response?->body(),
+            ]);
+
+            return [
+                'success' => false,
+                'error' => 'Request failed: ' . $e->getMessage(),
+            ];
+        } catch (\Exception $e) {
+            \Log::error('Prestashop stock update failed', [
+                'product_id' => $externalProductId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'error' => $e->getMessage(),
+            ];
+        }
+    }
+
+    protected function replaceNodeValue(\DOMDocument $dom, string $tagName, string $value): void
+    {
+        $node = $dom->getElementsByTagName($tagName)->item(0);
+
+        if (! $node) {
+            return;
+        }
+
+        while ($node->firstChild) {
+            $node->removeChild($node->firstChild);
+        }
+
+        $node->appendChild($dom->createTextNode($value));
     }
 }

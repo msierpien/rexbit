@@ -15,7 +15,11 @@ class TaskRunService
             'processed_count' => 0,
             'success_count' => 0,
             'failure_count' => 0,
-            'meta' => [],
+            'meta' => [
+                'samples' => [],
+                'errors' => [],
+                'pending_chunks' => 0,
+            ],
         ]);
 
         return $run;
@@ -24,6 +28,9 @@ class TaskRunService
     public function markQueued(IntegrationTaskRun $run, int $chunks): IntegrationTaskRun
     {
         $meta = $run->meta ?? [];
+        $meta['samples'] = $meta['samples'] ?? [];
+        $meta['errors'] = $meta['errors'] ?? [];
+        $meta['pending_chunks'] = $chunks;
         $log = $meta['log'] ?? [];
         $log[] = [
             'timestamp' => now()->toISOString(),
@@ -42,6 +49,7 @@ class TaskRunService
     public function finish(IntegrationTaskRun $run, int $imported, int $processed): IntegrationTaskRun
     {
         $meta = $run->meta ?? [];
+        $meta['pending_chunks'] = 0;
         $log = $meta['log'] ?? [];
         $log[] = [
             'timestamp' => now()->toISOString(),
@@ -62,6 +70,7 @@ class TaskRunService
     public function fail(IntegrationTaskRun $run, string $message): IntegrationTaskRun
     {
         $meta = $run->meta ?? [];
+        $meta['pending_chunks'] = 0;
         $log = $meta['log'] ?? [];
         $log[] = [
             'timestamp' => now()->toISOString(),

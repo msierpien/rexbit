@@ -356,11 +356,13 @@ function ConfigForm({ integration, fields, errors }) {
     );
 }
 
-function ProfileCreateForm({ integrationId, catalogs }) {
+function ProfileCreateForm({ integrationId, catalogs, suppliers }) {
     const catalogOptions = catalogs ?? [];
+    const supplierOptions = suppliers ?? [];
 
     const profileForm = useForm({
         name: '',
+        resource_type: 'products',
         format: 'csv',
         source_type: 'file',
         catalog_id: catalogOptions[0]?.id ? String(catalogOptions[0].id) : '',
@@ -376,15 +378,43 @@ function ProfileCreateForm({ integrationId, catalogs }) {
         fetch_cron_expression: '',
         options: {
             record_path: '',
+            supplier_availability: {
+                contractor_id: '',
+                match_by: 'sku_or_ean',
+                missing_behavior: 'skip',
+                default_delivery_days: '3',
+                sync_purchase_price: false,
+            },
         },
     });
 
-    profileForm.transform((data) => ({
-        ...data,
-        source_location: data.source_type === 'url' ? data.source_url : '',
-        has_header: data.has_header ? 1 : 0,
-        is_active: data.is_active ? 1 : 0,
-    }));
+    profileForm.transform((data) => {
+        const supplierSettings = {
+            ...(data.options?.supplier_availability ?? {}),
+        };
+
+        if (supplierSettings.contractor_id === '') {
+            supplierSettings.contractor_id = null;
+        }
+
+        supplierSettings.default_delivery_days = supplierSettings.default_delivery_days
+            ? parseInt(supplierSettings.default_delivery_days, 10) || 0
+            : 0;
+        supplierSettings.sync_purchase_price = supplierSettings.sync_purchase_price ? 1 : 0;
+
+        return {
+            ...data,
+            source_location: data.source_type === 'url' ? data.source_url : '',
+            has_header: data.has_header ? 1 : 0,
+            is_active: data.is_active ? 1 : 0,
+            options: {
+                ...data.options,
+                supplier_availability: supplierSettings,
+            },
+        };
+    });
+
+    const isSupplierTask = profileForm.data.resource_type === 'supplier-availability';
 
     const submit = (event) => {
         event.preventDefault();
@@ -415,6 +445,22 @@ function ProfileCreateForm({ integrationId, catalogs }) {
                         {profileForm.errors.name && (
                             <p className="text-xs text-red-600">{profileForm.errors.name}</p>
                         )}
+                    </div>
+
+                    <div className="space-y-2 md:col-span-2">
+                        <label className="text-sm font-medium text-foreground">Rodzaj importu</label>
+                        <Select
+                            value={profileForm.data.resource_type}
+                            onValueChange={(value) => profileForm.setData('resource_type', value)}
+                        >
+                            <SelectTrigger>
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="products">Produkty i kategorie</SelectItem>
+                                <SelectItem value="supplier-availability">Dostępność u dostawcy</SelectItem>
+                            </SelectContent>
+                        </Select>
                     </div>
 
                     <div className="space-y-2">
@@ -449,36 +495,40 @@ function ProfileCreateForm({ integrationId, catalogs }) {
                         </Select>
                     </div>
 
-                    <div className="space-y-2">
-                        <label className="text-sm font-medium text-foreground">Docelowy katalog</label>
-                        <Select
-                            value={profileForm.data.catalog_id ? String(profileForm.data.catalog_id) : undefined}
-                            onValueChange={(value) => profileForm.setData('catalog_id', value)}
-                        >
-                            <SelectTrigger>
-                                <SelectValue placeholder="Wybierz katalog" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {catalogOptions.map((catalog) => (
-                                    <SelectItem key={catalog.id} value={String(catalog.id)}>
-                                        {catalog.name}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                        {profileForm.errors.catalog_id && (
-                            <p className="text-xs text-red-600">{profileForm.errors.catalog_id}</p>
-                        )}
-                    </div>
+                    {!isSupplierTask && (
+                        <>
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-foreground">Docelowy katalog</label>
+                                <Select
+                                    value={profileForm.data.catalog_id ? String(profileForm.data.catalog_id) : undefined}
+                                    onValueChange={(value) => profileForm.setData('catalog_id', value)}
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Wybierz katalog" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {catalogOptions.map((catalog) => (
+                                            <SelectItem key={catalog.id} value={String(catalog.id)}>
+                                                {catalog.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                {profileForm.errors.catalog_id && (
+                                    <p className="text-xs text-red-600">{profileForm.errors.catalog_id}</p>
+                                )}
+                            </div>
 
-                    <div className="space-y-2">
-                        <label className="text-sm font-medium text-foreground">Nowy katalog (opcjonalnie)</label>
-                        <Input
-                            value={profileForm.data.new_catalog_name ?? ''}
-                            onChange={(event) => profileForm.setData('new_catalog_name', event.target.value)}
-                            placeholder="np. Import hurtownia"
-                        />
-                    </div>
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-foreground">Nowy katalog (opcjonalnie)</label>
+                                <Input
+                                    value={profileForm.data.new_catalog_name ?? ''}
+                                    onChange={(event) => profileForm.setData('new_catalog_name', event.target.value)}
+                                    placeholder="np. Import hurtownia"
+                                />
+                            </div>
+                        </>
+                    )}
 
                     <div className="space-y-2">
                         <label className="text-sm font-medium text-foreground">Plik źródłowy</label>
@@ -605,12 +655,13 @@ function ProfileCreateForm({ integrationId, catalogs }) {
 
 const NONE_OPTION = '__none__';
 
-function ProfileCard({ integrationId, profile, catalogs, mappingMeta }) {
+function ProfileCard({ integrationId, profile, catalogs, suppliers, mappingMeta }) {
     const [busyAction, setBusyAction] = useState(null);
     const [showMappingModal, setShowMappingModal] = useState(false);
 
     const updateForm = useForm({
         name: profile.name ?? '',
+        resource_type: profile.resource_type ?? 'products',
         format: profile.format ?? 'csv',
         source_type: profile.source_type ?? 'file',
         catalog_id: profile.catalog_id ? String(profile.catalog_id) : '',
@@ -626,6 +677,16 @@ function ProfileCard({ integrationId, profile, catalogs, mappingMeta }) {
         fetch_cron_expression: profile.fetch_cron_expression ?? '',
         options: {
             record_path: profile.options?.record_path ?? '',
+            supplier_availability: {
+                contractor_id: profile.options?.supplier_availability?.contractor_id
+                    ? String(profile.options.supplier_availability.contractor_id)
+                    : '',
+                match_by: profile.options?.supplier_availability?.match_by ?? 'sku_or_ean',
+                missing_behavior: profile.options?.supplier_availability?.missing_behavior ?? 'skip',
+                default_delivery_days:
+                    profile.options?.supplier_availability?.default_delivery_days ?? '',
+                sync_purchase_price: Boolean(profile.options?.supplier_availability?.sync_purchase_price),
+            },
         },
     });
 
@@ -633,15 +694,40 @@ function ProfileCard({ integrationId, profile, catalogs, mappingMeta }) {
 
     const submitUpdate = (event) => {
         event.preventDefault();
-        updateForm.transform((data) => ({
-            ...data,
-            _method: 'PUT',
-            source_location: data.source_type === 'url' ? data.source_url : '',
-            has_header: data.has_header ? 1 : 0,
-            is_active: data.is_active ? 1 : 0,
-        })).post(`/integrations/${integrationId}/import-profiles/${profile.id}`, {
+
+        updateForm.transform((data) => {
+            const supplierSettings = {
+                ...(data.options?.supplier_availability ?? {}),
+            };
+
+            if (supplierSettings.contractor_id === '' || supplierSettings.contractor_id === null) {
+                supplierSettings.contractor_id = null;
+            }
+
+            supplierSettings.default_delivery_days = supplierSettings.default_delivery_days
+                ? parseInt(supplierSettings.default_delivery_days, 10) || 0
+                : 0;
+            supplierSettings.sync_purchase_price = supplierSettings.sync_purchase_price ? 1 : 0;
+
+            return {
+                ...data,
+                _method: 'PUT',
+                source_location: data.source_type === 'url' ? data.source_url : '',
+                has_header: data.has_header ? 1 : 0,
+                is_active: data.is_active ? 1 : 0,
+                options: {
+                    ...data.options,
+                    supplier_availability: supplierSettings,
+                },
+            };
+        });
+
+        updateForm.post(`/integrations/${integrationId}/import-profiles/${profile.id}`, {
             forceFormData: true,
             preserveScroll: true,
+            onFinish: () => {
+                updateForm.transform((data) => data);
+            },
         });
     };
 
@@ -673,13 +759,31 @@ function ProfileCard({ integrationId, profile, catalogs, mappingMeta }) {
     };
 
     const runs = profile.runs ?? [];
+    const supplierOptions = suppliers ?? [];
+    const isSupplierTask = updateForm.data.resource_type === 'supplier-availability';
+    const supplierSettings = updateForm.data.options?.supplier_availability ?? {};
+
+    const updateSupplierOption = (key, value) => {
+        updateForm.setData('options', {
+            ...(updateForm.data.options ?? {}),
+            supplier_availability: {
+                ...supplierSettings,
+                [key]: value,
+            },
+        });
+    };
 
     return (
         <Card className="border border-border/80 shadow-sm">
             <CardHeader>
                 <CardTitle className="flex items-center justify-between gap-3">
                     Profil importu: {profile.name}
-                    <Badge variant="secondary">{profile.format?.toUpperCase()}</Badge>
+                    <div className="flex items-center gap-2">
+                        <Badge variant="outline">
+                            {profile.resource_type === 'supplier-availability' ? 'Dostępność' : 'Produkty'}
+                        </Badge>
+                        <Badge variant="secondary">{profile.format?.toUpperCase()}</Badge>
+                    </div>
                 </CardTitle>
                 <CardDescription>
                     Źródło: {profile.source_type === 'file' ? 'Plik' : 'Adres URL'} •{' '}
@@ -698,6 +802,22 @@ function ProfileCard({ integrationId, profile, catalogs, mappingMeta }) {
                         {updateForm.errors.name && (
                             <p className="text-xs text-red-600">{updateForm.errors.name}</p>
                         )}
+                    </div>
+
+                    <div className="space-y-2 md:col-span-2">
+                        <label className="text-sm font-medium text-foreground">Rodzaj importu</label>
+                        <Select
+                            value={updateForm.data.resource_type}
+                            onValueChange={(value) => updateForm.setData('resource_type', value)}
+                        >
+                            <SelectTrigger>
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="products">Produkty i kategorie</SelectItem>
+                                <SelectItem value="supplier-availability">Dostępność u dostawcy</SelectItem>
+                            </SelectContent>
+                        </Select>
                     </div>
 
                     <div className="space-y-2">
@@ -732,36 +852,137 @@ function ProfileCard({ integrationId, profile, catalogs, mappingMeta }) {
                         </Select>
                     </div>
 
-                    <div className="space-y-2">
-                        <label className="text-sm font-medium text-foreground">Katalog docelowy</label>
-                        <Select
-                            value={updateForm.data.catalog_id ? String(updateForm.data.catalog_id) : undefined}
-                            onValueChange={(value) => updateForm.setData('catalog_id', value)}
-                        >
-                            <SelectTrigger>
-                                <SelectValue placeholder="Wybierz katalog" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {catalogs.map((catalog) => (
-                                    <SelectItem key={catalog.id} value={String(catalog.id)}>
-                                        {catalog.name}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                        {updateForm.errors.catalog_id && (
-                            <p className="text-xs text-red-600">{updateForm.errors.catalog_id}</p>
-                        )}
-                    </div>
+                    {!isSupplierTask && (
+                        <>
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-foreground">Katalog docelowy</label>
+                                <Select
+                                    value={updateForm.data.catalog_id ? String(updateForm.data.catalog_id) : undefined}
+                                    onValueChange={(value) => updateForm.setData('catalog_id', value)}
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Wybierz katalog" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {catalogs.map((catalog) => (
+                                            <SelectItem key={catalog.id} value={String(catalog.id)}>
+                                                {catalog.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                {updateForm.errors.catalog_id && (
+                                    <p className="text-xs text-red-600">{updateForm.errors.catalog_id}</p>
+                                )}
+                            </div>
 
-                    <div className="space-y-2">
-                        <label className="text-sm font-medium text-foreground">Nowy katalog (opcjonalnie)</label>
-                        <Input
-                            value={updateForm.data.new_catalog_name ?? ''}
-                            onChange={(event) => updateForm.setData('new_catalog_name', event.target.value)}
-                        />
-                    </div>
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-foreground">Nowy katalog (opcjonalnie)</label>
+                                <Input
+                                    value={updateForm.data.new_catalog_name ?? ''}
+                                    onChange={(event) => updateForm.setData('new_catalog_name', event.target.value)}
+                                />
+                            </div>
+                        </>
+                    )}
 
+                    {isSupplierTask && (
+                        <div className="md:col-span-2 space-y-4 rounded-lg border border-dashed border-border/60 p-4">
+                            <div className="grid gap-4 md:grid-cols-3">
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-foreground">Dostawca (opcjonalnie)</label>
+                                    <Select
+                                        value={
+                                            supplierSettings.contractor_id
+                                                ? String(supplierSettings.contractor_id)
+                                                : '__any__'
+                                        }
+                                        onValueChange={(value) =>
+                                            updateSupplierOption(
+                                                'contractor_id',
+                                                value === '__any__' ? '' : value
+                                            )
+                                        }
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Wybierz dostawcę" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="__any__">Dowolny</SelectItem>
+                                            {supplierOptions.map((supplier) => (
+                                                <SelectItem key={supplier.id} value={String(supplier.id)}>
+                                                    {supplier.name}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-foreground">Dopasowanie produktów</label>
+                                    <Select
+                                        value={supplierSettings.match_by ?? 'sku_or_ean'}
+                                        onValueChange={(value) => updateSupplierOption('match_by', value)}
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="sku_or_ean">SKU lub EAN</SelectItem>
+                                            <SelectItem value="sku">Tylko SKU</SelectItem>
+                                            <SelectItem value="ean">Tylko EAN</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-foreground">Brak produktu w bazie</label>
+                                    <Select
+                                        value={supplierSettings.missing_behavior ?? 'skip'}
+                                        onValueChange={(value) => updateSupplierOption('missing_behavior', value)}
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="skip">Pomiń wiersz i odnotuj</SelectItem>
+                                            <SelectItem value="error">Zatrzymaj z błędem</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            </div>
+
+                            <div className="grid gap-4 md:grid-cols-2">
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-foreground">Domyślna liczba dni dostawy</label>
+                                    <Input
+                                        type="number"
+                                        min={0}
+                                        value={supplierSettings.default_delivery_days ?? ''}
+                                        onChange={(event) =>
+                                            updateSupplierOption('default_delivery_days', event.target.value)
+                                        }
+                                    />
+                                </div>
+
+                                <div className="flex items-center gap-3">
+                                    <Checkbox
+                                        id={`sync-price-${profile.id}`}
+                                        checked={Boolean(supplierSettings.sync_purchase_price)}
+                                        onCheckedChange={(value) =>
+                                            updateSupplierOption('sync_purchase_price', Boolean(value))
+                                        }
+                                    />
+                                    <label
+                                        htmlFor={`sync-price-${profile.id}`}
+                                        className="text-sm font-medium text-foreground"
+                                    >
+                                        Aktualizuj cenę zakupu w produktach
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                     <div className="space-y-2">
                         <label className="text-sm font-medium text-foreground">Nowy plik (opcjonalnie)</label>
                         <Input
@@ -890,7 +1111,12 @@ function ProfileCard({ integrationId, profile, catalogs, mappingMeta }) {
                             <MapPin className="size-4" />
                             {!profile.last_headers || profile.last_headers.length === 0 ? 
                                 'Skonfiguruj mapowanie' : 
-                                `Edytuj mapowanie (${Object.values(profile.mappings?.product || {}).filter(v => v).length + Object.values(profile.mappings?.category || {}).filter(v => v).length} pól)`
+                                `Edytuj mapowanie (${(() => {
+                                    const productCount = Object.values(profile.mappings?.product || {}).filter(v => v).length;
+                                    const categoryCount = Object.values(profile.mappings?.category || {}).filter(v => v).length;
+                                    const supplierCount = Object.values(profile.mappings?.supplier_availability || {}).filter(v => v).length;
+                                    return productCount + categoryCount + supplierCount;
+                                })()} pól)`
                             }
                         </Button>
                     </div>
@@ -905,7 +1131,12 @@ function ProfileCard({ integrationId, profile, catalogs, mappingMeta }) {
                     ) : (
                         <div className="text-sm text-muted-foreground">
                             Dostępnych kolumn: {profile.last_headers.length} | 
-                            Zmapowanych pól: {Object.values(profile.mappings?.product || {}).filter(v => v).length + Object.values(profile.mappings?.category || {}).filter(v => v).length}
+                            Zmapowanych pól: {(() => {
+                                const productCount = Object.values(profile.mappings?.product || {}).filter(v => v).length;
+                                const categoryCount = Object.values(profile.mappings?.category || {}).filter(v => v).length;
+                                const supplierCount = Object.values(profile.mappings?.supplier_availability || {}).filter(v => v).length;
+                                return productCount + categoryCount + supplierCount;
+                            })()}
                         </div>
                     )}
                 </div>
@@ -990,6 +1221,7 @@ function IntegrationsEdit() {
         profiles,
         profile_meta: profileMeta,
         catalogs,
+        suppliers,
         can,
         errors,
     } = usePage().props;
@@ -1038,6 +1270,7 @@ function IntegrationsEdit() {
         () => ({
             product_fields: profileMeta?.product_fields ?? {},
             category_fields: profileMeta?.category_fields ?? {},
+            supplier_fields: profileMeta?.supplier_fields ?? {},
         }),
         [profileMeta],
     );
@@ -1064,7 +1297,7 @@ function IntegrationsEdit() {
                         <ProfileCreateForm
                             integrationId={integration.id}
                             catalogs={catalogs ?? []}
-                            productFields={mappingMeta.product_fields}
+                            suppliers={suppliers ?? []}
                         />
 
                         {profiles.length === 0 ? (
@@ -1075,13 +1308,14 @@ function IntegrationsEdit() {
                             </Card>
                         ) : (
                             profiles.map((profile) => (
-                                <ProfileCard
-                                    key={profile.id}
-                                    integrationId={integration.id}
-                                    profile={profile}
-                                    catalogs={catalogs ?? []}
-                                    mappingMeta={mappingMeta}
-                                />
+                            <ProfileCard
+                                key={profile.id}
+                                integrationId={integration.id}
+                                profile={profile}
+                                catalogs={catalogs ?? []}
+                                suppliers={suppliers ?? []}
+                                mappingMeta={mappingMeta}
+                            />
                             ))
                         )}
                     </div>

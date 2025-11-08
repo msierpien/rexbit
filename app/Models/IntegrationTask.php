@@ -103,6 +103,7 @@ class IntegrationTask extends Model
             'customers' => 'Klienci',
             'categories' => 'Kategorie',
             'stock' => 'Stany magazynowe',
+            'supplier-availability' => 'Dostępność dostawcy',
             default => $this->resource_type,
         };
     }

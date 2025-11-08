@@ -3,6 +3,7 @@
 namespace App\Console;
 
 use App\Console\Commands\RunIntegrationImportsCommand;
+use App\Console\Commands\SyncSupplierAvailabilityCommand;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Console\Kernel as ConsoleKernel;
 
@@ -13,6 +14,7 @@ class Kernel extends ConsoleKernel
      */
     protected $commands = [
         RunIntegrationImportsCommand::class,
+        SyncSupplierAvailabilityCommand::class,
     ];
 
     protected function schedule(Schedule $schedule): void
@@ -24,6 +26,12 @@ class Kernel extends ConsoleKernel
         // Synchronize inventory with Prestashop integrations
         $schedule->command('integrations:sync-inventory')
             ->everyFiveMinutes()
+            ->withoutOverlapping()
+            ->runInBackground();
+
+        // Synchronize supplier availability to Prestashop (every 30 minutes)
+        $schedule->command('supplier:sync-availability --prestashop=1')
+            ->everyThirtyMinutes()
             ->withoutOverlapping()
             ->runInBackground();
     }

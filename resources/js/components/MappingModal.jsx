@@ -29,11 +29,30 @@ export default function MappingModal({
     onSaved 
 }) {
     const [isLoading, setIsLoading] = useState(false);
+    const resourceType = profile?.resource_type ?? 'products';
+    const visibleGroupKeys = resourceType === 'supplier-availability'
+        ? ['supplier_availability']
+        : ['product', 'category'];
+    const mappingGroups = {
+        product: {
+            label: 'Pola produktów',
+            fields: mappingMeta.product_fields || {},
+        },
+        category: {
+            label: 'Pola kategorii',
+            fields: mappingMeta.category_fields || {},
+        },
+        supplier_availability: {
+            label: 'Dostępność dostawcy',
+            fields: mappingMeta.supplier_fields || {},
+        },
+    };
 
     const { data, setData, post, processing, errors, reset } = useForm({
         mappings: {
             product: {},
             category: {},
+            supplier_availability: {},
         }
     });
 
@@ -54,9 +73,17 @@ export default function MappingModal({
                 ])
             );
 
+            const supplierMappings = Object.fromEntries(
+                Object.keys(mappingMeta.supplier_fields || {}).map((key) => [
+                    key,
+                    profile.mappings?.supplier_availability?.[key] || '',
+                ])
+            );
+
             setData('mappings', {
                 product: productMappings,
                 category: categoryMappings,
+                supplier_availability: supplierMappings,
             });
         }
     }, [profile, isOpen, mappingMeta]);
@@ -89,9 +116,10 @@ export default function MappingModal({
     };
 
     const getMappedFieldsCount = () => {
-        const productCount = Object.values(data.mappings.product || {}).filter(v => v !== '').length;
-        const categoryCount = Object.values(data.mappings.category || {}).filter(v => v !== '').length;
-        return productCount + categoryCount;
+        return visibleGroupKeys.reduce((carry, key) => {
+            const values = Object.values(data.mappings[key] || {}).filter((v) => v !== '');
+            return carry + values.length;
+        }, 0);
     };
 
     const getAvailableHeaders = () => {
@@ -111,8 +139,10 @@ export default function MappingModal({
                         </Badge>
                     </DialogTitle>
                     <DialogDescription>
-                        Przypisz kolumny z pliku/API do pól produktów i kategorii.
-                        Dostępne kolumny: {getAvailableHeaders().length}
+                        {resourceType === 'supplier-availability'
+                            ? 'Przypisz kolumny z pliku/API do pól dostępności u dostawcy.'
+                            : 'Przypisz kolumny z pliku/API do pól produktów i kategorii.'}
+                        {' '}Dostępne kolumny: {getAvailableHeaders().length}
                     </DialogDescription>
                 </DialogHeader>
 
@@ -125,99 +155,68 @@ export default function MappingModal({
                     </div>
                 ) : (
                     <div className="grid gap-6 md:grid-cols-2">
-                        {/* Produkty */}
-                        <div className="space-y-4">
-                            <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">
-                                Pola produktów
-                            </h3>
-                            <div className="space-y-3 max-h-96 overflow-y-auto">
-                                {Object.entries(mappingMeta.product_fields || {}).map(([targetField, label]) => (
-                                    <div key={targetField} className="space-y-1">
-                                        <Label className="text-xs font-medium">{label}</Label>
-                                        <div className="flex gap-2">
-                                            <Select
-                                                value={data.mappings.product?.[targetField] || '__none__'}
-                                                onValueChange={(value) => handleMappingChange('product', targetField, value === '__none__' ? '' : value)}
-                                            >
-                                                <SelectTrigger className="flex-1">
-                                                    <SelectValue placeholder="Wybierz kolumnę..." />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="__none__">-- Nie mapuj --</SelectItem>
-                                                    {getAvailableHeaders().map((header) => (
-                                                        <SelectItem key={header} value={header}>
-                                                            {header}
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                            {data.mappings.product?.[targetField] && (
-                                                <Button
-                                                    type="button"
-                                                    variant="outline"
-                                                    size="sm"
-                                                    onClick={() => clearMapping('product', targetField)}
-                                                >
-                                                    <X className="w-4 h-4" />
-                                                </Button>
-                                            )}
-                                        </div>
-                                        {errors[`mappings.product.${targetField}`] && (
-                                            <p className="text-xs text-red-600">
-                                                {errors[`mappings.product.${targetField}`]}
-                                            </p>
-                                        )}
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
+                        {visibleGroupKeys.map((groupKey) => {
+                            const group = mappingGroups[groupKey];
+                            const fields = Object.entries(group.fields || {});
 
-                        {/* Kategorie */}
-                        <div className="space-y-4">
-                            <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">
-                                Pola kategorii
-                            </h3>
-                            <div className="space-y-3 max-h-96 overflow-y-auto">
-                                {Object.entries(mappingMeta.category_fields || {}).map(([targetField, label]) => (
-                                    <div key={targetField} className="space-y-1">
-                                        <Label className="text-xs font-medium">{label}</Label>
-                                        <div className="flex gap-2">
-                                            <Select
-                                                value={data.mappings.category?.[targetField] || '__none__'}
-                                                onValueChange={(value) => handleMappingChange('category', targetField, value === '__none__' ? '' : value)}
-                                            >
-                                                <SelectTrigger className="flex-1">
-                                                    <SelectValue placeholder="Wybierz kolumnę..." />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="__none__">-- Nie mapuj --</SelectItem>
-                                                    {getAvailableHeaders().map((header) => (
-                                                        <SelectItem key={header} value={header}>
-                                                            {header}
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                            {data.mappings.category?.[targetField] && (
-                                                <Button
-                                                    type="button"
-                                                    variant="outline"
-                                                    size="sm"
-                                                    onClick={() => clearMapping('category', targetField)}
-                                                >
-                                                    <X className="w-4 h-4" />
-                                                </Button>
-                                            )}
-                                        </div>
-                                        {errors[`mappings.category.${targetField}`] && (
-                                            <p className="text-xs text-red-600">
-                                                {errors[`mappings.category.${targetField}`]}
-                                            </p>
-                                        )}
+                            if (fields.length === 0) {
+                                return null;
+                            }
+
+                            return (
+                                <div key={groupKey} className="space-y-4">
+                                    <h3 className="font-semibold text-sm uppercase tracking-wide text-muted-foreground">
+                                        {group.label}
+                                    </h3>
+                                    <div className="space-y-3 max-h-96 overflow-y-auto">
+                                        {fields.map(([targetField, label]) => (
+                                            <div key={targetField} className="space-y-1">
+                                                <Label className="text-xs font-medium">{label}</Label>
+                                                <div className="flex gap-2">
+                                                    <Select
+                                                        value={data.mappings[groupKey]?.[targetField] || '__none__'}
+                                                        onValueChange={(value) =>
+                                                            handleMappingChange(
+                                                                groupKey,
+                                                                targetField,
+                                                                value === '__none__' ? '' : value
+                                                            )
+                                                        }
+                                                    >
+                                                        <SelectTrigger className="flex-1">
+                                                            <SelectValue placeholder="Wybierz kolumnę..." />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            <SelectItem value="__none__">-- Nie mapuj --</SelectItem>
+                                                            {getAvailableHeaders().map((header) => (
+                                                                <SelectItem key={header} value={header}>
+                                                                    {header}
+                                                                </SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                    {data.mappings[groupKey]?.[targetField] && (
+                                                        <Button
+                                                            type="button"
+                                                            variant="outline"
+                                                            size="sm"
+                                                            onClick={() => clearMapping(groupKey, targetField)}
+                                                        >
+                                                            <X className="w-4 h-4" />
+                                                        </Button>
+                                                    )}
+                                                </div>
+                                                {errors[`mappings.${groupKey}.${targetField}`] && (
+                                                    <p className="text-xs text-red-600">
+                                                        {errors[`mappings.${groupKey}.${targetField}`]}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        ))}
                                     </div>
-                                ))}
-                            </div>
-                        </div>
+                                </div>
+                            );
+                        })}
                     </div>
                 )}
 

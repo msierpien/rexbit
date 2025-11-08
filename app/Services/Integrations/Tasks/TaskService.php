@@ -27,7 +27,7 @@ class TaskService
     public function create(Integration $integration, array $attributes): IntegrationTask
     {
         $normalized = $this->normalizeAttributes($attributes);
-        $data = $this->validate($normalized);
+        $data = $this->validate($normalized, integration: $integration);
 
         $sourceLocation = $this->storeSource($integration, null, $data);
 
@@ -62,7 +62,7 @@ class TaskService
     public function update(IntegrationTask $task, array $attributes): IntegrationTask
     {
         $normalized = $this->normalizeAttributes($attributes);
-        $data = $this->validate($normalized, $task);
+        $data = $this->validate($normalized, $task, $task->integration);
 
         $sourceLocation = $this->storeSource($task->integration, $task, $data);
 
@@ -124,12 +124,12 @@ class TaskService
     /**
      * Validate task data
      */
-    protected function validate(array $attributes, ?IntegrationTask $task = null): array
+    protected function validate(array $attributes, ?IntegrationTask $task = null, ?Integration $integration = null): array
     {
         $rules = [
             'name' => ['required', 'string', 'max:255'],
             'task_type' => ['nullable', Rule::in(['import', 'export'])],
-            'resource_type' => ['nullable', Rule::in(['products', 'orders', 'customers', 'categories', 'stock'])],
+            'resource_type' => ['nullable', Rule::in(['products', 'orders', 'customers', 'categories', 'stock', 'supplier-availability'])],
             'format' => ['required', Rule::in(['csv', 'xml', 'json'])],
             'source_type' => ['required', Rule::in(['url', 'file', 'api'])],
             'source_location' => ['required_unless:source_type,file', 'nullable', 'string', 'max:500'],
@@ -149,6 +149,25 @@ class TaskService
             'filters' => ['nullable', 'array'],
             'options' => ['nullable', 'array'],
         ];
+
+        if (($attributes['resource_type'] ?? 'products') === 'supplier-availability') {
+            $contractorRule = ['nullable', 'integer', 'exists:contractors,id'];
+            if ($integration?->user_id) {
+                $contractorRule = [
+                    'nullable',
+                    Rule::exists('contractors', 'id')->where('user_id', $integration->user_id),
+                ];
+            }
+
+            $rules = array_merge($rules, [
+                'options.supplier_availability' => ['nullable', 'array'],
+                'options.supplier_availability.contractor_id' => $contractorRule,
+                'options.supplier_availability.match_by' => ['nullable', Rule::in(['sku', 'ean', 'sku_or_ean'])],
+                'options.supplier_availability.missing_behavior' => ['nullable', Rule::in(['skip', 'error'])],
+                'options.supplier_availability.default_delivery_days' => ['nullable', 'integer', 'min:0', 'max:365'],
+                'options.supplier_availability.sync_purchase_price' => ['nullable', 'boolean'],
+            ]);
+        }
 
         return $this->validator->make($attributes, $rules)->validate();
     }

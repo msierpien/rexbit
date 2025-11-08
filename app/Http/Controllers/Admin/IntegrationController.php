@@ -6,6 +6,7 @@ use App\Enums\IntegrationStatus;
 use App\Enums\IntegrationType;
 use App\Http\Controllers\Controller;
 use App\Integrations\IntegrationService;
+use App\Models\Contractor;
 use App\Models\Integration;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -172,6 +173,16 @@ class IntegrationController extends Controller
             )->values()
             : collect();
 
+        $suppliers = $integration->user
+            ? $integration->user
+                ->contractors()
+                ->where('is_supplier', true)
+                ->orderBy('name')
+                ->get(['id', 'name'])
+                ->map(fn ($supplier) => $supplier->only(['id', 'name']))
+                ->values()
+            : collect();
+
         return Inertia::render('Integrations/Edit', [
             'integration' => array_merge(
                 $this->presentIntegration($integration),
@@ -203,9 +214,11 @@ class IntegrationController extends Controller
             'profile_meta' => [
                 'product_fields' => $this->productMappingFields(),
                 'category_fields' => $this->categoryMappingFields(),
+                'supplier_fields' => $this->supplierAvailabilityMappingFields(),
             ],
             'catalogs' => $catalogs->all(),
             'warehouses' => $warehouses->all(),
+            'suppliers' => $suppliers->all(),
             'can' => [
                 'delete' => $request->user()?->can('delete', $integration) ?? false,
                 'update' => $request->user()?->can('update', $integration) ?? false,
@@ -438,6 +451,20 @@ class IntegrationController extends Controller
         ];
     }
 
+    protected function supplierAvailabilityMappingFields(): array
+    {
+        return [
+            'supplier_sku' => 'Kod produktu u dostawcy',
+            'sku' => 'SKU w systemie',
+            'ean' => 'EAN (opcjonalnie)',
+            'stock_quantity' => 'Stan magazynowy u dostawcy',
+            'is_available' => 'Flaga dostępności (1/0, true/false)',
+            'delivery_days' => 'Czas dostawy w dniach',
+            'purchase_price' => 'Cena zakupu netto',
+            'available_later' => 'Etykieta „dostępny później”',
+        ];
+    }
+
     /**
      * Transform mappings array to frontend format
      */
@@ -446,6 +473,7 @@ class IntegrationController extends Controller
         $result = [
             'product' => [],
             'category' => [],
+            'supplier_availability' => [],
         ];
 
         foreach ($mappings as $mapping) {
