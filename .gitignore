@@ -22,3 +22,11 @@
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# Database backups
+*.sql
+*.sql.gz
+backup_*.sql
+dump_*.sql
+database_backup_*
+server_setup_commands.sh
