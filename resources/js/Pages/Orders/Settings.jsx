@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
-import DashboardLayout from '@/layouts/DashboardLayout';
+import DashboardLayout from '@/Layouts/DashboardLayout';
 import { Settings, Download, Play, RefreshCw, CheckCircle } from 'lucide-react';
 
 export default function OrdersSettings() {
