@@ -12,4 +12,11 @@ export default defineConfig({
         react(),
         tailwindcss(),
     ],
+    server: {
+        host: '0.0.0.0',
+        port: 5173,
+        hmr: {
+            host: process.env.VITE_HOST || 'localhost'
+        }
+    },
 });
