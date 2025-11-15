@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 
 import DashboardLayout from '@/Layouts/DashboardLayout';
-import StatusBadge from '@/Components/Orders/StatusBadge';
+import StatusBadge from '@/components/Orders/StatusBadge';
 import Pagination from '@/components/Pagination';
 
 export default function OrderList({ auth, orders, filters, integrations = [] }) {

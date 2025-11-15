@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Toaster } from 'sonner';
-import ToastContainer from '@/Components/Notifications/ToastContainer';
+import ToastContainer from '@/components/Notifications/ToastContainer';
 
 const NAVIGATION_GROUPS = [
     {

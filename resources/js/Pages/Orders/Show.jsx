@@ -21,12 +21,12 @@ import {
 } from 'lucide-react';
 
 import DashboardLayout from '@/Layouts/DashboardLayout';
-import StatusBadge from '@/Components/Orders/StatusBadge';
-import OrderItemsTable from '@/Components/Orders/OrderItemsTable';
-import AddressCard from '@/Components/Orders/AddressCard';
-import OrderTimeline from '@/Components/Orders/OrderTimeline';
-import PaymentInfo from '@/Components/Orders/PaymentInfo';
-import ShippingInfo from '@/Components/Orders/ShippingInfo';
+import StatusBadge from '@/components/Orders/StatusBadge';
+import OrderItemsTable from '@/components/Orders/OrderItemsTable';
+import AddressCard from '@/components/Orders/AddressCard';
+import OrderTimeline from '@/components/Orders/OrderTimeline';
+import PaymentInfo from '@/components/Orders/PaymentInfo';
+import ShippingInfo from '@/components/Orders/ShippingInfo';
 
 export default function OrderDetail({ auth, order, breadcrumbs = [] }) {
     const [activeTab, setActiveTab] = useState('details');
