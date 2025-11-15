@@ -26,21 +26,38 @@ const PAYMENT_STATUS_CONFIG = {
     }
 };
 
-export default function PaymentInfo({ payment, total, currency = 'PLN', onUpdate }) {
+export default function PaymentInfo({ order, onUpdate }) {
     const [isEditing, setIsEditing] = useState(false);
-    const [editForm, setEditForm] = useState(payment || {});
+    const [editForm, setEditForm] = useState({
+        payment_method: order?.payment_method || '',
+        is_paid: order?.is_paid || false,
+        total_paid: order?.total_paid || 0,
+        payment_status: order?.payment_status || 'pending'
+    });
 
     const formatCurrency = (amount) => {
         return new Intl.NumberFormat('pl-PL', {
             style: 'currency',
-            currency: currency
+            currency: order?.currency || 'PLN'
         }).format(amount);
     };
 
-    const statusConfig = PAYMENT_STATUS_CONFIG[payment?.status || 'pending'];
+    // Determine payment status based on payment amount vs total
+    const getPaymentStatus = () => {
+        if (order?.is_paid) return 'paid';
+        if (order?.total_paid > 0 && order?.total_paid < order?.total_gross) return 'partially_paid';
+        return order?.payment_status || 'pending';
+    };
+
+    const statusConfig = PAYMENT_STATUS_CONFIG[getPaymentStatus()] || PAYMENT_STATUS_CONFIG.pending;
 
     const handleEdit = () => {
-        setEditForm({ ...payment });
+        setEditForm({
+            payment_method: order?.payment_method || '',
+            is_paid: order?.is_paid || false,
+            total_paid: order?.total_paid || 0,
+            payment_status: order?.payment_status || 'pending'
+        });
         setIsEditing(true);
     };
 
@@ -52,7 +69,12 @@ export default function PaymentInfo({ payment, total, currency = 'PLN', onUpdate
     };
 
     const handleCancel = () => {
-        setEditForm({ ...payment });
+        setEditForm({
+            payment_method: order?.payment_method || '',
+            is_paid: order?.is_paid || false,
+            total_paid: order?.total_paid || 0,
+            payment_status: order?.payment_status || 'pending'
+        });
         setIsEditing(false);
     };
 
@@ -63,8 +85,8 @@ export default function PaymentInfo({ payment, total, currency = 'PLN', onUpdate
                     Status płatności
                 </label>
                 <select
-                    value={editForm.status || 'pending'}
-                    onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
+                    value={editForm.payment_status || 'pending'}
+                    onChange={(e) => setEditForm({ ...editForm, payment_status: e.target.value })}
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                     {Object.entries(PAYMENT_STATUS_CONFIG).map(([status, config]) => (
@@ -82,8 +104,8 @@ export default function PaymentInfo({ payment, total, currency = 'PLN', onUpdate
                 <input
                     type="number"
                     step="0.01"
-                    value={editForm.amount || ''}
-                    onChange={(e) => setEditForm({ ...editForm, amount: parseFloat(e.target.value) })}
+                    value={editForm.total_paid || ''}
+                    onChange={(e) => setEditForm({ ...editForm, total_paid: parseFloat(e.target.value) })}
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
             </div>
@@ -93,8 +115,8 @@ export default function PaymentInfo({ payment, total, currency = 'PLN', onUpdate
                     Sposób płatności
                 </label>
                 <select
-                    value={editForm.provider || ''}
-                    onChange={(e) => setEditForm({ ...editForm, provider: e.target.value })}
+                    value={editForm.payment_method || ''}
+                    onChange={(e) => setEditForm({ ...editForm, payment_method: e.target.value })}
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                     <option value="">Wybierz sposób płatności</option>
@@ -103,34 +125,22 @@ export default function PaymentInfo({ payment, total, currency = 'PLN', onUpdate
                     <option value="paypal">PayPal</option>
                     <option value="przelewy24">Przelewy24</option>
                     <option value="payu">PayU</option>
-                    <option value="cash">Gotówka</option>
                     <option value="cash_on_delivery">Za pobraniem</option>
+                    <option value="other">Inne</option>
                 </select>
             </div>
 
-            <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">
-                    Data płatności
-                </label>
+            <div className="flex items-center">
                 <input
-                    type="datetime-local"
-                    value={editForm.paid_at || ''}
-                    onChange={(e) => setEditForm({ ...editForm, paid_at: e.target.value })}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    type="checkbox"
+                    id="is_paid"
+                    checked={editForm.is_paid || false}
+                    onChange={(e) => setEditForm({ ...editForm, is_paid: e.target.checked })}
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                 />
-            </div>
-
-            <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">
-                    ID transakcji
+                <label htmlFor="is_paid" className="ml-2 text-sm text-gray-700">
+                    Oznacz jako opłacone
                 </label>
-                <input
-                    type="text"
-                    value={editForm.external_payment_id || ''}
-                    onChange={(e) => setEditForm({ ...editForm, external_payment_id: e.target.value })}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="ID transakcji w systemie płatności"
-                />
             </div>
 
             <div className="flex justify-end space-x-2 pt-2">
@@ -150,6 +160,19 @@ export default function PaymentInfo({ payment, total, currency = 'PLN', onUpdate
         </div>
     );
 
+    const getPaymentMethodLabel = (method) => {
+        const methods = {
+            'card': 'Karta płatnicza',
+            'bank_transfer': 'Przelew bankowy',
+            'paypal': 'PayPal',
+            'przelewy24': 'Przelewy24',
+            'payu': 'PayU',
+            'cash_on_delivery': 'Za pobraniem',
+            'other': 'Inne'
+        };
+        return methods[method] || method;
+    };
+
     const renderReadOnlyInfo = () => (
         <div className="space-y-3">
             <div className="flex items-center justify-between">
@@ -157,63 +180,57 @@ export default function PaymentInfo({ payment, total, currency = 'PLN', onUpdate
                 <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${statusConfig.color}`}>
                     {statusConfig.icon}
                     <span className="ml-1">{statusConfig.label}</span>
+                    {order?.is_paid && (
+                        <CheckCircle className="w-3 h-3 ml-1" />
+                    )}
                 </span>
             </div>
 
             <div className="flex items-center justify-between">
                 <span className="text-sm text-gray-600">Do zapłaty:</span>
                 <span className="text-sm font-semibold text-gray-900">
-                    {formatCurrency(total)}
+                    {formatCurrency(order?.total_gross)}
                 </span>
             </div>
 
-            {payment?.amount && (
+            {order?.total_paid > 0 && (
                 <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-600">Zapłacone:</span>
                     <span className="text-sm font-medium text-green-700">
-                        {formatCurrency(payment.amount)}
+                        {formatCurrency(order.total_paid)}
                     </span>
                 </div>
             )}
 
-            {payment?.amount && payment.amount < total && (
+            {order?.total_paid > 0 && order.total_paid < order?.total_gross && (
                 <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-600">Pozostało:</span>
                     <span className="text-sm font-medium text-red-700">
-                        {formatCurrency(total - payment.amount)}
+                        {formatCurrency(order.total_gross - order.total_paid)}
                     </span>
                 </div>
             )}
 
-            {payment?.provider && (
+            {order?.payment_method && (
                 <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-600">Sposób:</span>
                     <span className="text-sm text-gray-900">
-                        {payment.provider === 'card' && 'Karta płatnicza'}
-                        {payment.provider === 'bank_transfer' && 'Przelew'}
-                        {payment.provider === 'paypal' && 'PayPal'}
-                        {payment.provider === 'przelewy24' && 'Przelewy24'}
-                        {payment.provider === 'payu' && 'PayU'}
-                        {payment.provider === 'cash' && 'Gotówka'}
-                        {payment.provider === 'cash_on_delivery' && 'Za pobraniem'}
+                        {getPaymentMethodLabel(order.payment_method)}
                     </span>
                 </div>
             )}
 
-            {payment?.paid_at && (
-                <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600">Data płatności:</span>
-                    <span className="text-sm text-gray-900">
-                        {new Date(payment.paid_at).toLocaleString('pl-PL')}
-                    </span>
-                </div>
-            )}
-
-            {payment?.external_payment_id && (
+            {order?.external_reference && (
                 <div className="pt-2 border-t border-gray-100">
                     <div className="text-xs text-gray-500">
-                        ID transakcji: {payment.external_payment_id}
+                        Ref. zewnętrzna: {order.external_reference}
                     </div>
+                </div>
+            )}
+
+            {!order?.payment_method && !order?.total_paid && (
+                <div className="text-sm text-gray-500 italic">
+                    Brak informacji o płatności
                 </div>
             )}
         </div>

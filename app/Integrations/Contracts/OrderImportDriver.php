@@ -46,17 +46,18 @@ interface OrderImportDriver
     public function fetchOrderDetails(Integration $integration, string $externalOrderId): ?array;
 
     /**
-     * Mapowanie statusów z platformy zewnętrznej na lokalne statusy
+     * Mapowanie statusów zamówień
      * 
      * @param string $externalStatus
-     * @return string Status zgodny z enum w Order model
+     * @param string $platform
+     * @return string Status zgodny z Order model
      */
-    public function mapOrderStatus(string $externalStatus): string;
+    public function mapOrderStatus(string $externalStatus, string $platform): string;
 
     /**
      * Mapowanie statusów płatności
      */
-    public function mapPaymentStatus(array $orderData): string;
+    public function mapPaymentStatus(array $orderData, string $platform): string;
 
     /**
      * Znormalizuj dane zamówienia do standardowego formatu

@@ -53,6 +53,9 @@ export default function AddressCard({
                     <div className="text-gray-700 flex items-center">
                         <Building className="w-4 h-4 text-gray-400 mr-2" />
                         {address.company}
+                        <span className="ml-2 px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
+                            FIRMA
+                        </span>
                     </div>
                 )}
 

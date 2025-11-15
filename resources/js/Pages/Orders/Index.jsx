@@ -91,8 +91,8 @@ export default function OrderList({ auth, orders, filters, integrations = [] }) 
         
         switch (action) {
             case 'delete':
-                if (confirm('Czy na pewno chcesz usunąć zaznaczone zamówienia?')) {
-                    router.delete('/orders/bulk-delete', {
+                if (confirm('Czy na pewno chcesz usunąć zaznaczone zamówienia?\n\nUWAGA: Zamówienia zostaną usunięte tylko z lokalnej bazy danych.\nZamówienia w PrestaShop pozostaną nietknięte.')) {
+                    router.delete('/orders/bulk', {
                         data: { order_ids: selectedOrders }
                     });
                 }
@@ -314,11 +314,11 @@ export default function OrderList({ auth, orders, filters, integrations = [] }) 
                                         </th>
                                         <th 
                                             className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
-                                            onClick={() => handleSort('created_at')}
+                                            onClick={() => handleSort('order_date')}
                                         >
                                             <div className="flex items-center">
                                                 Data
-                                                {getSortIcon('created_at')}
+                                                {getSortIcon('order_date')}
                                             </div>
                                         </th>
                                         <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -385,9 +385,27 @@ export default function OrderList({ auth, orders, filters, integrations = [] }) 
                                                     <span className="text-sm font-semibold text-gray-900">
                                                         {formatCurrency(order.total_gross, order.currency)}
                                                     </span>
+                                                    {order.is_paid && (
+                                                        <span className="ml-2 inline-flex items-center px-1 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                                                            ✓
+                                                        </span>
+                                                    )}
                                                 </div>
-                                                <div className="text-xs text-gray-500">
+                                                <div className="text-xs text-gray-500 flex items-center">
                                                     {order.items_count || 0} pozycji
+                                                    {order.payment_method && (
+                                                        <span className="ml-2 text-xs text-gray-400">
+                                                            • {order.payment_method === 'cash_on_delivery' ? 'Pobranie' : 
+                                                               order.payment_method === 'card' ? 'Karta' :
+                                                               order.payment_method === 'bank_transfer' ? 'Przelew' : 
+                                                               order.payment_method}
+                                                        </span>
+                                                    )}
+                                                    {order.is_company && (
+                                                        <span className="ml-2 px-1 py-0.5 text-xs bg-blue-100 text-blue-800 rounded">
+                                                            FIRMA
+                                                        </span>
+                                                    )}
                                                 </div>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
@@ -399,11 +417,11 @@ export default function OrderList({ auth, orders, filters, integrations = [] }) 
                                                 <div className="flex items-center">
                                                     <Calendar className="w-4 h-4 text-gray-400 mr-1" />
                                                     <span className="text-sm text-gray-900">
-                                                        {new Date(order.created_at).toLocaleDateString('pl-PL')}
+                                                        {new Date(order.order_date).toLocaleDateString('pl-PL')}
                                                     </span>
                                                 </div>
                                                 <div className="text-xs text-gray-500">
-                                                    {new Date(order.created_at).toLocaleTimeString('pl-PL', {
+                                                    {new Date(order.order_date).toLocaleTimeString('pl-PL', {
                                                         hour: '2-digit',
                                                         minute: '2-digit'
                                                     })}
@@ -427,7 +445,7 @@ export default function OrderList({ auth, orders, filters, integrations = [] }) 
                                                     </Link>
                                                     <button
                                                         onClick={() => {
-                                                            if (confirm('Czy na pewno chcesz usunąć to zamówienie?')) {
+                                                            if (confirm('Czy na pewno chcesz usunąć to zamówienie?\n\nUWAGA: Zamówienie zostanie usunięte tylko z lokalnej bazy danych.\nZamówienie w PrestaShop pozostanie nietknięte.')) {
                                                                 router.delete(`/orders/${order.id}`);
                                                             }
                                                         }}

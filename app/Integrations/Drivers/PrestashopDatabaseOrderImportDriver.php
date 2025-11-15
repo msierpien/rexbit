@@ -3,6 +3,7 @@
 namespace App\Integrations\Drivers;
 
 use App\Integrations\Contracts\OrderImportDriver;
+use App\Integrations\Concerns\HasStatusMapping;
 use App\Integrations\IntegrationService;
 use App\Models\Integration;
 use PDO;
@@ -21,6 +22,8 @@ use Illuminate\Support\Arr;
  */
 class PrestashopDatabaseOrderImportDriver implements OrderImportDriver
 {
+    use HasStatusMapping;
+
     public function __construct(
         protected IntegrationService $integrationService
     ) {}
@@ -135,9 +138,9 @@ class PrestashopDatabaseOrderImportDriver implements OrderImportDriver
         $countStmt->execute($countParams);
         $totalCount = $countStmt->fetchColumn();
 
-        // Normalizuj dane zamówień
-        $normalizedOrders = array_map(function ($order) {
-            return $this->normalizeOrderData($order);
+        // Normalizuj dane zamówień (przekaż połączenie by móc pobierać dodatkowe dane)
+        $normalizedOrders = array_map(function ($order) use ($connection, $prefix) {
+            return $this->normalizeOrderData($order, $connection, $prefix);
         }, $orders);
 
         return [
@@ -201,9 +204,33 @@ class PrestashopDatabaseOrderImportDriver implements OrderImportDriver
         // Pobierz adresy
         $addresses = $this->fetchOrderAddresses($connection, $prefix, $order);
 
-        $normalizedOrder = $this->normalizeOrderData($order);
+    $normalizedOrder = $this->normalizeOrderData($order, $connection, $prefix);
         $normalizedOrder['items'] = array_map([$this, 'normalizeOrderItem'], $items);
         $normalizedOrder['addresses'] = $addresses;
+        
+        // Dodaj adresy do znormalizowanych danych
+        if (!empty($addresses['shipping'])) {
+            $normalizedOrder['shipping_address'] = $addresses['shipping'];
+        }
+        
+        if (!empty($addresses['billing'])) {
+            $normalizedOrder['billing_address'] = $addresses['billing'];
+            // Zaktualizuj invoice_data z pełnymi danymi adresu
+            $billingAddr = $addresses['billing'];
+            $normalizedOrder['invoice_data'] = [
+                'company' => $billingAddr['company'] ?? '',
+                'vat_number' => $billingAddr['vat_id'] ?? '',
+                'name' => $billingAddr['name'] ?? '',
+                'address1' => $billingAddr['street'] ?? '',
+                'address2' => '',
+                'postcode' => $billingAddr['postal_code'] ?? '',
+                'city' => $billingAddr['city'] ?? '',
+                'phone' => $billingAddr['phone'] ?? '',
+                'phone_mobile' => '',
+                'alias' => $billingAddr['prestashop_data']['alias'] ?? ''
+            ];
+            $normalizedOrder['is_company'] = !empty($billingAddr['company']);
+        }
 
         return $normalizedOrder;
     }
@@ -278,72 +305,79 @@ class PrestashopDatabaseOrderImportDriver implements OrderImportDriver
         ];
     }
 
-    public function normalizeOrderData(array $rawOrderData): array
+    public function normalizeOrderData(array $rawOrderData, ?PDO $connection = null, string $prefix = 'ps_'): array
     {
+        // podstawowe mapowanie
+        $paymentMethod = $rawOrderData['payment'] ?? null;
+        $totalPaid = (float)($rawOrderData['total_paid'] ?? 0);
+        $totalOrder = (float)($rawOrderData['total_paid_tax_incl'] ?? $rawOrderData['total_paid'] ?? 0);
+
+        $isPaid = $totalPaid > 0 && $totalPaid >= $totalOrder;
+
+        $shippingMethod = null;
+        $shippingDetails = null;
+
+        // jeśli mamy połączenie do bazy PrestaShop, pobierz nazwę przewoźnika
+        if ($connection && !empty($rawOrderData['id_carrier'])) {
+            try {
+                $stmt = $connection->prepare("SELECT name FROM {$prefix}carrier WHERE id_carrier = ? LIMIT 1");
+                $stmt->execute([$rawOrderData['id_carrier']]);
+                $carrier = $stmt->fetch(PDO::FETCH_ASSOC);
+                $shippingMethod = $carrier['name'] ?? null;
+                $shippingDetails = ['carrier_id' => $rawOrderData['id_carrier']];
+            } catch (\Exception $e) {
+                // ignore - pozostaw null
+            }
+        } else {
+            // fallback do pola id_carrier value
+            $shippingMethod = $rawOrderData['id_carrier'] ?? null;
+            $shippingDetails = ['carrier_id' => $rawOrderData['id_carrier'] ?? null];
+        }
+
+        // invoice / billing data - jeżeli dostępne w surowych danych, w przeciwnym razie zostanie pobrane przy fetchOrderDetails
+        $invoiceData = null;
+        $isCompany = false;
+        if (!empty($rawOrderData['id_address_invoice']) && $connection) {
+            try {
+                $stmt = $connection->prepare("SELECT company, vat_number, address1, address2, postcode, city, phone, phone_mobile, alias FROM {$prefix}address WHERE id_address = ? LIMIT 1");
+                $stmt->execute([$rawOrderData['id_address_invoice']]);
+                $addr = $stmt->fetch(PDO::FETCH_ASSOC);
+                if ($addr) {
+                    $invoiceData = $addr;
+                    $isCompany = !empty($addr['company']);
+                }
+            } catch (\Exception $e) {
+                // ignore
+            }
+        }
+
         return [
-            'external_order_id' => $rawOrderData['id_order'],
-            'external_reference' => $rawOrderData['reference'],
-            'status' => $this->mapOrderStatus($rawOrderData['current_state']),
-            'payment_status' => $this->mapPaymentStatus($rawOrderData),
-            'customer_name' => trim(
-                ($rawOrderData['customer_firstname'] ?? '') . ' ' . 
-                ($rawOrderData['customer_lastname'] ?? '')
-            ) ?: null,
+            'external_order_id' => $rawOrderData['id_order'] ?? ($rawOrderData['id'] ?? null),
+            'external_reference' => $rawOrderData['reference'] ?? null,
+            'status' => $this->mapOrderStatus((string)($rawOrderData['current_state'] ?? ''), 'prestashop'),
+            'payment_status' => $this->mapPaymentStatus($rawOrderData, 'prestashop'),
+            'payment_method' => $paymentMethod,
+            'is_paid' => $isPaid,
+            'customer_name' => trim(($rawOrderData['customer_firstname'] ?? '') . ' ' . ($rawOrderData['customer_lastname'] ?? '')) ?: null,
             'customer_email' => $rawOrderData['customer_email'] ?? null,
             'customer_phone' => $rawOrderData['customer_phone'] ?? null,
-            'currency' => $rawOrderData['currency_code'] ?? 'EUR',
-            'total_net' => (float)($rawOrderData['total_paid_tax_excl'] ?? $rawOrderData['total_paid']),
-            'total_gross' => (float)$rawOrderData['total_paid_tax_incl'] ?? (float)$rawOrderData['total_paid'],
+            'currency' => $rawOrderData['currency_code'] ?? ($rawOrderData['iso_code'] ?? 'EUR'),
+            'total_net' => (float)($rawOrderData['total_paid_tax_excl'] ?? $rawOrderData['total_paid'] ?? 0),
+            'total_gross' => (float)($rawOrderData['total_paid_tax_incl'] ?? $rawOrderData['total_paid'] ?? 0),
+            'total_paid' => $totalPaid,
             'shipping_cost' => (float)($rawOrderData['total_shipping'] ?? 0),
+            'shipping_method' => $shippingMethod,
+            'shipping_details' => $shippingDetails,
             'discount_total' => (float)($rawOrderData['total_discounts'] ?? 0),
-            'order_date' => $rawOrderData['date_add'],
-            'notes' => $rawOrderData['note'] ?: null,
+            'order_date' => $rawOrderData['date_add'] ?? null,
+            'notes' => $rawOrderData['note'] ?? null,
+            'invoice_data' => $invoiceData,
+            'is_company' => $isCompany,
             'prestashop_data' => $rawOrderData
         ];
     }
 
-    public function mapOrderStatus(string $externalStatus): string
-    {
-        // Mapowanie popularnych statusów PrestaShop na lokalne
-        return match($externalStatus) {
-            '1' => 'awaiting_payment',    // Awaiting check payment
-            '2' => 'paid',                // Payment accepted  
-            '3' => 'awaiting_fulfillment', // Preparing shipment
-            '4' => 'shipped',             // Shipped
-            '5' => 'completed',           // Delivered
-            '6' => 'cancelled',           // Canceled
-            '7' => 'refunded',            // Refunded
-            '8' => 'payment_error',       // Payment error
-            '9' => 'on_backorder',        // On backorder (out of stock)
-            '10' => 'awaiting_payment',   // Awaiting bank wire payment
-            '11' => 'awaiting_payment',   // Awaiting PayPal payment
-            '12' => 'awaiting_payment',   // Remote payment accepted
-            '13' => 'awaiting_payment',   // On backorder (paid)
-            default => 'draft'            // Nieznany status
-        };
-    }
 
-    public function mapPaymentStatus(array $orderData): string
-    {
-        $status = $orderData['current_state'];
-        $totalPaid = (float)($orderData['total_paid'] ?? 0);
-        $totalOrder = (float)($orderData['total_paid_tax_incl'] ?? $orderData['total_paid']);
-
-        // Logika mapowania na podstawie statusu i kwot
-        if (in_array($status, ['2', '3', '4', '5', '13'])) { // Płatności potwierdzone
-            if ($totalPaid >= $totalOrder) {
-                return 'paid';
-            } elseif ($totalPaid > 0) {
-                return 'partially_paid';
-            }
-        }
-
-        if (in_array($status, ['7'])) { // Zwroty
-            return 'refunded';
-        }
-
-        return 'pending';
-    }
 
     public function getLastSyncDate(Integration $integration): ?string
     {

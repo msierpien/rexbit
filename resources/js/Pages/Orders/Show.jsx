@@ -217,7 +217,7 @@ export default function OrderDetail({ auth, order, breadcrumbs = [] }) {
 
                                     <div className="flex items-center text-sm">
                                         <Calendar className="w-4 h-4 text-gray-400 mr-2" />
-                                        <span>Złożone: {new Date(order.created_at).toLocaleString('pl-PL')}</span>
+                                        <span>Złożone: {new Date(order.order_date).toLocaleString('pl-PL')}</span>
                                     </div>
 
                                     {order.notes && (
@@ -231,9 +231,7 @@ export default function OrderDetail({ auth, order, breadcrumbs = [] }) {
 
                             {/* Płatność */}
                             <PaymentInfo 
-                                payment={order.payment}
-                                total={order.total_gross}
-                                currency={order.currency}
+                                order={order}
                                 onUpdate={(updates) => {
                                     router.put(`/orders/${order.id}/payment`, updates);
                                 }}
@@ -241,7 +239,7 @@ export default function OrderDetail({ auth, order, breadcrumbs = [] }) {
 
                             {/* Wysyłka */}
                             <ShippingInfo 
-                                shipping={order.shipping}
+                                order={order}
                                 onUpdate={(updates) => {
                                     router.put(`/orders/${order.id}/shipping`, updates);
                                 }}
@@ -257,7 +255,16 @@ export default function OrderDetail({ auth, order, breadcrumbs = [] }) {
                                 />
 
                                 <AddressCard
-                                    title="Dane do faktury"
+                                    title={
+                                        <div className="flex items-center">
+                                            Dane do faktury
+                                            {order.is_company && (
+                                                <span className="ml-2 px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
+                                                    FIRMA
+                                                </span>
+                                            )}
+                                        </div>
+                                    }
                                     icon={<FileText className="w-5 h-5" />}
                                     address={order.billing_address}
                                     editable

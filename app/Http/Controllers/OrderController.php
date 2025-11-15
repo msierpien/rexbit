@@ -5,8 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\Order;
 use App\Models\Integration;
 use Illuminate\Http\Request;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\JsonResponse;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -104,6 +104,8 @@ class OrderController extends Controller
             'items.product:id,name,sku,ean',
             'items.integrationProductLink:id,external_product_id',
             'addresses',
+            'shippingAddress',
+            'billingAddress',
             'statusHistory.changedBy:id,name'
         ]);
 
@@ -275,9 +277,9 @@ class OrderController extends Controller
     }
 
     /**
-     * API: Masowe usuwanie zamówień
+     * Masowe usuwanie zamówień
      */
-    public function bulkDestroy(Request $request): JsonResponse
+    public function bulkDestroy(Request $request)
     {
         $validated = $request->validate([
             'order_ids' => 'required|array',
@@ -287,10 +289,7 @@ class OrderController extends Controller
         // 🔐 Global scope zapewnia że usuwamy tylko zamówienia użytkownika
         $count = Order::whereIn('id', $validated['order_ids'])->delete();
 
-        return response()->json([
-            'success' => true,
-            'message' => "Usunięto {$count} zamówień"
-        ]);
+        return redirect()->route('orders.index')->with('success', "Usunięto {$count} zamówień z lokalnej bazy danych");
     }
 
     /**

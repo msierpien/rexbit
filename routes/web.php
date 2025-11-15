@@ -5,6 +5,7 @@ use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\AdminDashboardController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\OrderController;
+use App\Http\Controllers\OrderStatusController;
 use App\Http\Controllers\ContractorController;
 use App\Http\Controllers\InventoryCountController;
 use App\Http\Controllers\IntegrationImportProfileController;
@@ -40,6 +41,16 @@ Route::middleware(['auth', 'role:user,admin'])->group(function (): void {
     Route::get('/dashboard', UserDashboardController::class)->name('dashboard');
     
     // 📦 ORDERS - Zamówienia (nowy moduł)
+    
+    // Specjalne routes (muszą być PRZED resource route)
+    Route::delete('/orders/bulk', [\App\Http\Controllers\OrderController::class, 'bulkDestroy'])
+        ->name('orders.bulk-delete');
+    Route::get('/orders-settings', [\App\Http\Controllers\OrderController::class, 'settings'])
+        ->name('orders.settings');
+    Route::post('/orders/import/{integration}', [\App\Http\Controllers\OrderController::class, 'runImport'])
+        ->name('orders.import');
+    
+    // Resource routes
     Route::resource('/orders', \App\Http\Controllers\OrderController::class)
         ->names('orders');
     
@@ -48,12 +59,13 @@ Route::middleware(['auth', 'role:user,admin'])->group(function (): void {
         ->name('orders.update-status');
     Route::put('/orders/{order}/items/{item}', [\App\Http\Controllers\OrderController::class, 'updateItem'])
         ->name('orders.items.update');
-    Route::delete('/orders/bulk', [\App\Http\Controllers\OrderController::class, 'bulkDestroy'])
-        ->name('orders.bulk-delete');
-    Route::get('/orders-settings', [\App\Http\Controllers\OrderController::class, 'settings'])
-        ->name('orders.settings');
-    Route::post('/orders/import/{integration}', [\App\Http\Controllers\OrderController::class, 'runImport'])
-        ->name('orders.import');
+        
+    // Statusy zamówień
+    Route::resource('/orders/statuses', OrderStatusController::class)
+        ->names('orders.statuses')
+        ->except(['show']);
+    Route::post('/orders/statuses/update-order', [OrderStatusController::class, 'updateOrder'])
+        ->name('orders.statuses.update-order');
 
     Route::resource('/integrations', IntegrationController::class)
         ->except(['show'])

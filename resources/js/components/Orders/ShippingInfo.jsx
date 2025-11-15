@@ -49,11 +49,15 @@ const CARRIERS = {
     other: 'Inny'
 };
 
-export default function ShippingInfo({ shipping, onUpdate }) {
+export default function ShippingInfo({ order, onUpdate }) {
     const [isEditing, setIsEditing] = useState(false);
-    const [editForm, setEditForm] = useState(shipping || {});
+    const [editForm, setEditForm] = useState({
+        shipping_method: order?.shipping_method || '',
+        shipping_details: order?.shipping_details || {},
+        shipping_cost: order?.shipping_cost || 0
+    });
 
-    const statusConfig = SHIPPING_STATUS_CONFIG[shipping?.status || 'pending'];
+    const statusConfig = SHIPPING_STATUS_CONFIG[order?.fulfillment_status || 'pending'] || SHIPPING_STATUS_CONFIG.pending;
 
     const handleEdit = () => {
         setEditForm({ ...shipping });
@@ -193,6 +197,27 @@ export default function ShippingInfo({ shipping, onUpdate }) {
         </div>
     );
 
+    const renderParcelLockerInfo = () => {
+        const details = order?.shipping_details || {};
+        if (details.locker_id || details.parcel_locker) {
+            return (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3 mt-2">
+                    <div className="flex items-center">
+                        <MapPin className="w-4 h-4 text-yellow-600 mr-2" />
+                        <span className="text-sm font-medium text-yellow-800">Paczkomat</span>
+                    </div>
+                    <div className="mt-1 text-sm text-yellow-700">
+                        ID: {details.locker_id || details.parcel_locker}
+                        {details.locker_address && (
+                            <div className="text-xs">{details.locker_address}</div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+        return null;
+    };
+
     const renderReadOnlyInfo = () => (
         <div className="space-y-3">
             <div className="flex items-center justify-between">
@@ -202,34 +227,36 @@ export default function ShippingInfo({ shipping, onUpdate }) {
                 </span>
             </div>
 
-            {shipping?.carrier && (
+            {order?.shipping_method && (
                 <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600">Kurier:</span>
+                    <span className="text-sm text-gray-600">Sposób dostawy:</span>
                     <span className="text-sm text-gray-900">
-                        {CARRIERS[shipping.carrier] || shipping.carrier}
+                        {order.shipping_method}
                     </span>
                 </div>
             )}
 
-            {shipping?.service && (
+            {order?.shipping_details?.carrier && (
                 <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600">Usługa:</span>
-                    <span className="text-sm text-gray-900">{shipping.service}</span>
+                    <span className="text-sm text-gray-600">Kurier:</span>
+                    <span className="text-sm text-gray-900">
+                        {CARRIERS[order.shipping_details.carrier] || order.shipping_details.carrier}
+                    </span>
                 </div>
             )}
 
-            {shipping?.tracking_number && (
+            {order?.shipping_details?.tracking_number && (
                 <div className="space-y-1">
                     <div className="flex items-center justify-between">
                         <span className="text-sm text-gray-600">Numer przesyłki:</span>
                         <span className="text-sm font-mono text-gray-900">
-                            {shipping.tracking_number}
+                            {order.shipping_details.tracking_number}
                         </span>
                     </div>
-                    {getTrackingUrl(shipping.carrier, shipping.tracking_number) && (
+                    {getTrackingUrl(order.shipping_details.carrier, order.shipping_details.tracking_number) && (
                         <div className="flex justify-end">
                             <a
-                                href={getTrackingUrl(shipping.carrier, shipping.tracking_number)}
+                                href={getTrackingUrl(order.shipping_details.carrier, order.shipping_details.tracking_number)}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="inline-flex items-center text-xs text-blue-600 hover:text-blue-800"
@@ -242,28 +269,30 @@ export default function ShippingInfo({ shipping, onUpdate }) {
                 </div>
             )}
 
-            {shipping?.shipped_at && (
+            {order?.shipped_at && (
                 <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-600">Data wysyłki:</span>
                     <span className="text-sm text-gray-900">
-                        {new Date(shipping.shipped_at).toLocaleString('pl-PL')}
+                        {new Date(order.shipped_at).toLocaleString('pl-PL')}
                     </span>
                 </div>
             )}
 
-            {shipping?.cost && (
+            {order?.shipping_cost > 0 && (
                 <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-600">Koszt wysyłki:</span>
                     <span className="text-sm text-gray-900">
                         {new Intl.NumberFormat('pl-PL', {
                             style: 'currency',
-                            currency: 'PLN'
-                        }).format(shipping.cost)}
+                            currency: order?.currency || 'PLN'
+                        }).format(order.shipping_cost)}
                     </span>
                 </div>
             )}
 
-            {!shipping?.carrier && !shipping?.tracking_number && (
+            {renderParcelLockerInfo()}
+
+            {!order?.shipping_method && !order?.shipping_details?.carrier && (
                 <div className="text-sm text-gray-500 italic">
                     Brak informacji o wysyłce
                 </div>

@@ -3,6 +3,7 @@
 namespace App\Integrations\Drivers;
 
 use App\Integrations\Contracts\OrderImportDriver;
+use App\Integrations\Concerns\HasStatusMapping;
 use App\Integrations\IntegrationService;
 use App\Models\Integration;
 use Exception;
@@ -21,6 +22,8 @@ use Illuminate\Support\Arr;
  */
 class PrestashopApiOrderImportDriver implements OrderImportDriver
 {
+    use HasStatusMapping;
+    
     protected Client $httpClient;
 
     public function __construct(
@@ -315,11 +318,31 @@ class PrestashopApiOrderImportDriver implements OrderImportDriver
 
     public function normalizeOrderData(array $rawOrderData, ?array $customer = null): array
     {
+        $paymentMethod = $rawOrderData['payment'] ?? ($rawOrderData['payment_method'] ?? null);
+        $totalPaid = (float)($rawOrderData['total_paid'] ?? 0);
+        $totalOrder = (float)($rawOrderData['total_paid_tax_incl'] ?? $rawOrderData['total_paid'] ?? 0);
+        $isPaid = $totalPaid > 0 && $totalPaid >= $totalOrder;
+
+        $shippingMethod = null;
+        $shippingDetails = null;
+        if (!empty($rawOrderData['id_carrier'])) {
+            $shippingMethod = $rawOrderData['id_carrier'];
+            $shippingDetails = ['carrier_id' => $rawOrderData['id_carrier']];
+        }
+
+        $invoiceData = $rawOrderData['invoice_address'] ?? ($rawOrderData['invoice'] ?? null);
+        $isCompany = false;
+        if (is_array($invoiceData) && !empty($invoiceData['company'])) {
+            $isCompany = true;
+        }
+
         return [
             'external_order_id' => $rawOrderData['id'] ?? $rawOrderData['id_order'],
             'external_reference' => $rawOrderData['reference'] ?? null,
-            'status' => $this->mapOrderStatus($rawOrderData['current_state'] ?? ''),
-            'payment_status' => $this->mapPaymentStatus($rawOrderData),
+            'status' => $this->mapOrderStatus($rawOrderData['current_state'] ?? '', 'prestashop'),
+            'payment_status' => $this->mapPaymentStatus($rawOrderData, 'prestashop'),
+            'payment_method' => $paymentMethod,
+            'is_paid' => $isPaid,
             'customer_name' => $customer ? 
                 trim(($customer['firstname'] ?? '') . ' ' . ($customer['lastname'] ?? '')) : null,
             'customer_email' => $customer['email'] ?? null,
@@ -327,52 +350,20 @@ class PrestashopApiOrderImportDriver implements OrderImportDriver
             'currency' => $this->getCurrencyIsoCode($rawOrderData['id_currency'] ?? null),
             'total_net' => (float)($rawOrderData['total_paid_tax_excl'] ?? $rawOrderData['total_paid'] ?? 0),
             'total_gross' => (float)($rawOrderData['total_paid_tax_incl'] ?? $rawOrderData['total_paid'] ?? 0),
+            'total_paid' => $totalPaid,
             'shipping_cost' => (float)($rawOrderData['total_shipping'] ?? 0),
+            'shipping_method' => $shippingMethod,
+            'shipping_details' => $shippingDetails,
             'discount_total' => (float)($rawOrderData['total_discounts'] ?? 0),
             'order_date' => $rawOrderData['date_add'] ?? null,
             'notes' => $rawOrderData['note'] ?: null,
+            'invoice_data' => $invoiceData,
+            'is_company' => $isCompany,
             'prestashop_data' => $rawOrderData
         ];
     }
 
-    public function mapOrderStatus(string $externalStatus): string
-    {
-        return match($externalStatus) {
-            '1' => 'awaiting_payment',
-            '2' => 'paid',
-            '3' => 'awaiting_fulfillment',
-            '4' => 'shipped',
-            '5' => 'completed',
-            '6' => 'cancelled',
-            '7' => 'refunded',
-            '8' => 'payment_error',
-            '9' => 'on_backorder',
-            '10', '11', '12' => 'awaiting_payment',
-            '13' => 'awaiting_payment',
-            default => 'draft'
-        };
-    }
 
-    public function mapPaymentStatus(array $orderData): string
-    {
-        $status = $orderData['current_state'] ?? '';
-        $totalPaid = (float)($orderData['total_paid'] ?? 0);
-        $totalOrder = (float)($orderData['total_paid_tax_incl'] ?? $orderData['total_paid'] ?? 0);
-
-        if (in_array($status, ['2', '3', '4', '5', '13'])) {
-            if ($totalPaid >= $totalOrder) {
-                return 'paid';
-            } elseif ($totalPaid > 0) {
-                return 'partially_paid';
-            }
-        }
-
-        if ($status === '7') {
-            return 'refunded';
-        }
-
-        return 'pending';
-    }
 
     public function getLastSyncDate(Integration $integration): ?string
     {

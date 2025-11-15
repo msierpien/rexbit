@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Toaster } from 'sonner';
+import ToastContainer from '@/Components/Notifications/ToastContainer';
 
 const NAVIGATION_GROUPS = [
     {
@@ -60,6 +61,7 @@ const NAVIGATION_GROUPS = [
         label: 'Zamówienia',
         items: [
             { label: 'Lista zamówień', href: '/orders', match: ['/orders'], roles: ['admin', 'user'] },
+            { label: 'Statusy', href: '/orders/statuses', match: ['/orders/statuses'], roles: ['admin', 'user'] },
             { label: 'Ustawienia', href: '/orders-settings', match: ['/orders-settings'], roles: ['admin', 'user'] },
         ],
     },
@@ -192,9 +194,9 @@ export default function DashboardLayout({ title, children }) {
                         </div>
                     </header>
                     <main className="flex-1 p-6">
-                        {flash?.status && (
+                        {(flash?.status || flash?.success) && (
                             <div className="mb-4 rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-                                {flash.status}
+                                {flash.status || flash.success}
                             </div>
                         )}
                         {flash?.error && (
@@ -206,6 +208,7 @@ export default function DashboardLayout({ title, children }) {
                     </main>
                 </div>
             </div>
+            <ToastContainer />
             <Toaster position="top-right" richColors />
         </div>
     );

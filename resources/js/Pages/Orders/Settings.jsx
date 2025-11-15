@@ -111,6 +111,25 @@ export default function OrdersSettings() {
                     </p>
                 </div>
 
+                {/* Informacja o synchronizacji */}
+                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4 mb-6">
+                    <div className="flex items-start gap-3">
+                        <CheckCircle className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                        <div>
+                            <h3 className="font-semibold text-blue-900 dark:text-blue-100">
+                                Ważne informacje o synchronizacji zamówień
+                            </h3>
+                            <ul className="mt-2 text-sm text-blue-800 dark:text-blue-200 space-y-1">
+                                <li>• <strong>Import jest jednokierunkowy:</strong> PrestaShop → RexBit</li>
+                                <li>• <strong>Lokalne zmiany:</strong> Edycja i usuwanie zamówień wpływa tylko na lokalną bazę</li>
+                                <li>• <strong>Źródłowe dane:</strong> Zamówienia w PrestaShop pozostają nietknięte</li>
+                                <li>• <strong>Ponowny import:</strong> Może nadpisać lokalne zmiany</li>
+                                <li>• <strong>Statusy:</strong> Mapowane z PrestaShop na lokalne statusy użytkownika</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
                 {/* Import Configuration */}
                 <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
                     <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">

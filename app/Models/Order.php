@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Str;
 
@@ -34,6 +35,12 @@ class Order extends Model
         'prestashop_data',
         'notes',
         'metadata',
+        'payment_method',
+        'is_paid',
+        'shipping_method',
+        'shipping_details',
+        'invoice_data',
+        'is_company',
         'order_date',
         'shipped_at',
         'completed_at'
@@ -42,6 +49,10 @@ class Order extends Model
     protected $casts = [
         'prestashop_data' => 'array',
         'metadata' => 'array',
+        'shipping_details' => 'array',
+        'invoice_data' => 'array',
+        'is_paid' => 'boolean',
+        'is_company' => 'boolean',
         'order_date' => 'datetime',
         'shipped_at' => 'datetime',
         'completed_at' => 'datetime',
@@ -93,10 +104,30 @@ class Order extends Model
     {
         return $this->hasMany(OrderAddress::class);
     }
+    
+    public function shippingAddress(): HasOne
+    {
+        return $this->hasOne(OrderAddress::class)->where('type', 'shipping');
+    }
+    
+    public function billingAddress(): HasOne
+    {
+        return $this->hasOne(OrderAddress::class)->where('type', 'billing');
+    }
 
     public function statusHistory(): HasMany
     {
         return $this->hasMany(OrderStatusHistory::class);
+    }
+
+    public function orderStatus(): BelongsTo
+    {
+        return $this->belongsTo(OrderStatus::class, 'status', 'key')->where('type', 'order');
+    }
+
+    public function paymentStatusModel(): BelongsTo
+    {
+        return $this->belongsTo(OrderStatus::class, 'payment_status', 'key')->where('type', 'payment');
     }
 
     // Metody pomocnicze
