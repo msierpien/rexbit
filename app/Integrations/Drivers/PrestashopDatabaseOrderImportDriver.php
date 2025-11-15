@@ -79,6 +79,7 @@ class PrestashopDatabaseOrderImportDriver implements OrderImportDriver
                 o.id_order,
                 o.reference,
                 o.id_customer,
+                o.id_cart,
                 o.current_state,
                 o.payment,
                 o.total_paid,
@@ -325,6 +326,26 @@ class PrestashopDatabaseOrderImportDriver implements OrderImportDriver
                 $carrier = $stmt->fetch(PDO::FETCH_ASSOC);
                 $shippingMethod = $carrier['name'] ?? null;
                 $shippingDetails = ['carrier_id' => $rawOrderData['id_carrier']];
+                
+                // Pobierz dane o paczkomacie InPost jeśli dostępne
+                if (!empty($rawOrderData['id_cart'])) {
+                    try {
+                        $inpostStmt = $connection->prepare("SELECT machine, tracking_number FROM juuw_pminpostpaczkomatylist WHERE id_cart = ? LIMIT 1");
+                        $inpostStmt->execute([$rawOrderData['id_cart']]);
+                        $inpostData = $inpostStmt->fetch(PDO::FETCH_ASSOC);
+                        
+                        if ($inpostData && !empty($inpostData['machine'])) {
+                            $shippingDetails['parcel_locker'] = $inpostData['machine'];
+                            $shippingDetails['tracking_number'] = $inpostData['tracking_number'] ?? null;
+                            // Jeśli to InPost, zaktualizuj metodę wysyłki
+                            if (stripos($shippingMethod, 'inpost') !== false || !empty($inpostData['machine'])) {
+                                $shippingMethod = 'InPost Paczkomat ' . $inpostData['machine'];
+                            }
+                        }
+                    } catch (\Exception $e) {
+                        // ignore - błąd pobierania danych InPost nie przerywa procesu
+                    }
+                }
             } catch (\Exception $e) {
                 // ignore - pozostaw null
             }
