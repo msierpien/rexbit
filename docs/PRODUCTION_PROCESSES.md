@@ -370,3 +370,91 @@ php artisan queue:monitor integrations,import,default --max=100
 # Statystyki
 php artisan queue:work integrations --once  # Test pojedynczego joba
 ```
+
+## 11. Moduł Zamówień – Plan wdrożenia
+
+### 11.1 Cel i zakres
+- Wdrożyć moduł „Zamówienia” obejmujący dane klienta, pozycje, statusy, dokumenty WZ, rezerwacje stanów i integracje z zewnętrznymi źródłami.
+- W panelu dodać dział `Zamówienia` z dwiema zakładkami: `Lista zamówień` (widok operacyjny) oraz `Ustawienia` (konfiguracja statusów, numeracji, automatyki, integracji kurierów/płatności).
+- Każde zamówienie ma generować dokumenty magazynowe WZ i rezerwacje produktów oraz synchronizować stany z magazynem/integracjami.
+
+### 11.2 Model danych (nowe tabele)
+- **orders** – `user_id`, `number`, `source`, `integration_id`, `external_order_id`, `status`, `payment_status`, `fulfillment_status`, `currency`, `totals`, `delivery_method`, `metadata`, timestampy.
+- **order_items** – `order_id`, `product_id`, `integration_product_link_id`, snapshot produktu (`name`, `sku`, `ean`), `quantity`, `price_net`, `price_gross`, `vat_rate`, `discount_total`, `warehouse_location_id`, `metadata`.
+- **order_addresses** – `order_id`, `type` (`customer`, `billing`, `shipping`, `pickup`), dane kontaktowe i adresowe, `vat_id`, `metadata`; pozwala przechować dane klienta niezależnie od kontrahentów.
+- **order_payments** – `order_id`, `provider`, `external_payment_id`, `status`, `amount`, `currency`, `paid_at`, `due_date`, `metadata`.
+- **order_shipments** – `order_id`, `carrier`, `service`, `tracking_number`, `labels_path`, `packages`, `status`, `shipped_at`, `metadata`.
+- **order_status_history** – `order_id`, `from_status`, `to_status`, `changed_by`, `context`, `created_at`.
+- **order_documents** – `order_id`, `warehouse_document_id`, `type` (`reservation`, `issue_wz`, `packing_list`), `status`, `metadata`.
+- **order_item_reservations** – `order_item_id`, `warehouse_location_id`, `reserved_qty`, `status` (`open`, `partially_released`, `released`), `expires_at`.
+- **order_settings** – preferencje użytkownika: status startowy, słowniki statusów, numeracja zamówień, domyślne magazyny, przełączniki automatyki (auto-rezerwacja, auto-WZ, auto-synchronizacja z PrestaShop).
+- **order_notes / order_audit_logs** – historia komunikacji i logi automatycznych działań (opcjonalne, pomocne do timeline’u znanego z BaseLinkera).
+
+### 11.3 Statusy i automaty
+- **Status główny (`orders.status`)**:
+  - Standardowy flow: `draft` → `awaiting_payment` → `paid` → `awaiting_fulfillment` → `picking` → `ready_for_shipment` → `shipped` → `completed`.
+  - Ścieżki boczne: `cancelled` (do momentu wysyłki), `return_requested`, `returned`.
+- **Status płatności (`payment_status`)**: `pending`, `partially_paid`, `paid`, `refunded`.
+- **Status realizacji (`fulfillment_status`)**: `unassigned`, `reserved`, `picking`, `packed`, `shipped`.
+- Przejścia pilnuje `OrderWorkflowService` (walidacja, side effects, event `OrderStatusChanged`). Każda zmiana trafia do `order_status_history` wraz z użytkownikiem/jobem i komentarzem.
+- Dostosowanie statusów (nazwy, kolory, mapowania integracji) przechowywane w `order_settings`.
+
+### 11.4 Proces magazynowy i dokumenty
+1. **Tworzenie zamówienia** – dane z integracji (Prestashop API/DB) lub manualnie z panelu. Status początkowy zgodnie z ustawieniami użytkownika.
+2. **Rezerwacja stanów** – job `ReserveOrderStock` rezerwuje ilości w `warehouse_stock_totals` (`reserved`↑) i zapisuje szczegóły w `order_item_reservations`. Obsługuje częściowe rezerwacje i kolejkę braków.
+3. **Dokument rezerwacyjny** – opcjonalny dokument logiczny (np. typ `reservation`) przypięty w `order_documents` dla raportowania i śledzenia braków.
+4. **Kompletacja i wydanie** – przejście do `picking/ready_for_shipment` uruchamia `GenerateWarehouseDocumentForOrder`, który:
+   - grupuje pozycje wg magazynu,
+   - korzysta z `WarehouseDocumentService` do wygenerowania dokumentu `WZ`,
+   - odkłada informację w `order_documents` (link do `warehouse_document_id`), a następnie zatwierdza dokument (status `posted`) i aktualizuje `warehouse_stock_totals.on_hand`.
+5. **Zwolnienie rezerwacji** – po zatwierdzeniu WZ lub anulowaniu zamówienia job `ReleaseOrderReservation` zmniejsza `reserved` i oznacza rekord jako `released`. W przypadku anulacji generuje dokument storna (np. `IN`).
+6. **Aktualizacja integracji** – listener `OrderFulfilled` wywołuje `IntegrationInventorySyncService` i ewentualnie `PrestashopOrderStatusSyncService`, aby zwrócić statusy/tracking.
+
+### 11.5 Panel i API
+- Dodaj wpis `Zamówienia` w menu dashboardu (obok `Produkty`/`Integracje`).
+- **Lista zamówień** (Inertia):
+  - filtry po statusie, płatności, źródle integracji, dacie;
+  - kolumny: numer, klient, suma brutto, statusy, przypisany magazyn, integracja;
+  - widok szczegółowy z sekcjami jak na screenie (informacje o płatności, adresy, pozycje, dokumenty WZ, historia zmian, rezerwacje, timeline konwersacji).
+- **Ustawienia**:
+  - konfiguracja statusów (kolejność, kolory, mapowania do integracji);
+  - numeracja zamówień (prefiks, sufiks, resetowanie);
+  - ustawienia rezerwacji (domyślny magazyn, czas wygaśnięcia rezerwacji, czy rezerwować automatycznie po `awaiting_fulfillment`);
+  - konfiguracja przewoźników/kurierów (np. API InPost, DPD), integracji płatności (PayU, Przelewy24);
+  - przełączniki automatyki (auto-WZ, auto-zwalnianie rezerwacji przy anulacji).
+- Backend:
+  - kontrolery: `OrderController`, `OrderSettingsController`, `OrderDocumentController`, `OrderStatusController`, `OrderShipmentController`;
+  - zasoby API (`OrderResource`, `OrderItemResource`, `OrderSettingsResource`, `OrderShipmentResource`);
+  - polityki (`OrderPolicy`) i testy feature (lista, tworzenie, zmiana statusu, generowanie WZ, anulacja).
+
+### 11.6 Integracje i kolejki
+- Utwórz dedykowany worker:
+
+```bash
+php artisan queue:work --queue=orders --sleep=3 --tries=3 --max-time=3600
+```
+
+- Scheduler:
+
+```php
+$schedule->command('orders:sync-external --integration=7')
+    ->everyTenMinutes()
+    ->withoutOverlapping()
+    ->onOneServer();
+
+$schedule->command('orders:release-expired-reservations')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
+```
+
+- Rozszerzenia integracji:
+  - `PrestashopDatabaseIntegrationDriver` – pobieranie zamówień (tabele `ps_orders`, `ps_order_detail`, `ps_address`, `ps_customer`) + mapowanie statusów do lokalnych.
+  - webhooki (np. `orders.updated`) wysyłające statusy i numery listów przewozowych z powrotem do platform e-commerce.
+  - możliwość ręcznego przypięcia zamówienia do istniejącej integracji/dokumentu.
+
+### 11.7 Sugestie i dalsze kroki
+- Dodać moduł wiadomości przy zamówieniu (email/SMS/chat) + automatyczne makra (np. „poinformuj klienta o wysyłce”).
+- Integracja z bramkami płatności (PayU, P24) w celu automatycznego uaktualniania `payment_status`.
+- Generator PDF (potwierdzenie zamówienia, WZ, dokument rezerwacji) z możliwością wysyłki mailowej.
+- Dashboard KPI dla zamówień (czas realizacji, suma zamówień, procent opóźnionych, poziom rezerwacji).
+- Funkcje B2B: udostępnianie klientowi portalu do śledzenia statusu i pobierania dokumentów.
