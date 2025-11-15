@@ -6,6 +6,11 @@ return [
         'prestashop-db' => App\Integrations\Drivers\PrestashopDatabaseIntegrationDriver::class,
         'csv-xml-import' => App\Integrations\Drivers\CsvXmlImportIntegrationDriver::class,
     ],
+    
+    'order_import_drivers' => [
+        'prestashop' => App\Integrations\Drivers\PrestashopApiOrderImportDriver::class,
+        'prestashop-db' => App\Integrations\Drivers\PrestashopDatabaseOrderImportDriver::class,
+    ],
     'import' => [
         'chunk_size' => env('INTEGRATION_IMPORT_CHUNK', 200),
     ],

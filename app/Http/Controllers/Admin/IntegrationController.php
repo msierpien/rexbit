@@ -193,6 +193,7 @@ class IntegrationController extends Controller
                             'base_url' => Arr::get($integration->config, 'base_url'),
                             'description' => Arr::get($integration->config, 'description'),
                             'product_listing_enabled' => Arr::get($integration->config, 'product_listing_enabled', false),
+                            'order_import_enabled' => Arr::get($integration->config, 'order_import_enabled', false),
                             'inventory_sync_mode' => Arr::get($integration->config, 'inventory_sync_mode', 'disabled'),
                             'primary_warehouse_id' => Arr::get($integration->config, 'primary_warehouse_id'),
                             'inventory_sync_interval_minutes' => Arr::get(
@@ -383,6 +384,13 @@ class IntegrationController extends Controller
                     'default' => false,
                 ],
                 [
+                    'name' => 'order_import_enabled',
+                    'label' => 'Import zamówień',
+                    'type' => 'checkbox',
+                    'helper' => 'Po zaznaczeniu integracja będzie importować zamówienia z PrestaShop do lokalnego systemu.',
+                    'default' => false,
+                ],
+                [
                     'name' => 'inventory_sync_mode',
                     'label' => 'Synchronizacja stanów magazynowych',
                     'component' => 'select',
@@ -500,6 +508,13 @@ class IntegrationController extends Controller
                     'helper' => 'Po zaznaczeniu integracja udostępnia listę produktów (możliwość powiązania przez panel produktów).',
                     'default' => false,
                 ],
+                [
+                    'name' => 'order_import_enabled',
+                    'label' => 'Import zamówień',
+                    'type' => 'checkbox',
+                    'helper' => 'Po zaznaczeniu integracja będzie importować zamówienia z PrestaShop przez bezpośrednie połączenie z bazą danych.',
+                    'default' => false,
+                ],
             ],
             IntegrationType::CSV_XML_IMPORT => [],
         };
@@ -512,6 +527,7 @@ class IntegrationController extends Controller
                 'base_url' => '',
                 'api_key' => '',
                 'product_listing_enabled' => false,
+                'order_import_enabled' => false,
                 'inventory_sync_mode' => 'disabled',
                 'inventory_sync_interval_minutes' => 180,
                 'primary_warehouse_id' => null,
@@ -526,6 +542,7 @@ class IntegrationController extends Controller
                 'id_shop' => 1,
                 'id_lang' => 1,
                 'product_listing_enabled' => false,
+                'order_import_enabled' => false,
             ],
             IntegrationType::CSV_XML_IMPORT => [],
         };

@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\IntegrationController;
 use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\AdminDashboardController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\OrderController;
 use App\Http\Controllers\ContractorController;
 use App\Http\Controllers\InventoryCountController;
 use App\Http\Controllers\IntegrationImportProfileController;
@@ -36,7 +37,23 @@ Route::post('/logout', [AuthController::class, 'destroy'])
     ->name('logout');
 
 Route::middleware(['auth', 'role:user,admin'])->group(function (): void {
-    Route::get('/dashboard', UserDashboardController::class)->name('dashboard.user');
+    Route::get('/dashboard', UserDashboardController::class)->name('dashboard');
+    
+    // 📦 ORDERS - Zamówienia (nowy moduł)
+    Route::resource('/orders', \App\Http\Controllers\OrderController::class)
+        ->names('orders');
+    
+    // API endpoints dla AJAX (zamówienia)
+    Route::put('/orders/{order}/status', [\App\Http\Controllers\OrderController::class, 'updateStatus'])
+        ->name('orders.update-status');
+    Route::put('/orders/{order}/items/{item}', [\App\Http\Controllers\OrderController::class, 'updateItem'])
+        ->name('orders.items.update');
+    Route::delete('/orders/bulk', [\App\Http\Controllers\OrderController::class, 'bulkDestroy'])
+        ->name('orders.bulk-delete');
+    Route::get('/orders-settings', [\App\Http\Controllers\OrderController::class, 'settings'])
+        ->name('orders.settings');
+    Route::post('/orders/import/{integration}', [\App\Http\Controllers\OrderController::class, 'runImport'])
+        ->name('orders.import');
 
     Route::resource('/integrations', IntegrationController::class)
         ->except(['show'])

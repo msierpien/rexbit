@@ -57,6 +57,13 @@ const NAVIGATION_GROUPS = [
         ],
     },
     {
+        label: 'Zamówienia',
+        items: [
+            { label: 'Lista zamówień', href: '/orders', match: ['/orders'], roles: ['admin', 'user'] },
+            { label: 'Ustawienia', href: '/orders-settings', match: ['/orders-settings'], roles: ['admin', 'user'] },
+        ],
+    },
+    {
         label: 'Integracje',
         items: [
             { label: 'Integracje', href: '/integrations', match: ['/integrations'], roles: ['admin', 'user'] },

@@ -97,6 +97,24 @@
                 ],
             ],
             [
+                'type' => 'group',
+                'label' => 'Zamówienia',
+                'icon' => 'package',
+                'visible' => in_array($roleValue, ['admin', 'user'], true),
+                'items' => [
+                    [
+                        'label' => 'Lista zamówień',
+                        'route' => route('orders.index'),
+                        'active' => request()->routeIs('orders.*') && !request()->routeIs('orders.settings'),
+                    ],
+                    [
+                        'label' => 'Ustawienia',
+                        'route' => route('orders.settings'),
+                        'active' => request()->routeIs('orders.settings'),
+                    ],
+                ],
+            ],
+            [
                 'type' => 'link',
                 'label' => 'Integracje',
                 'icon' => 'link',

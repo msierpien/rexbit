@@ -1,0 +1,222 @@
+// OrderItemsTable.jsx - Tabela produktów w zamówieniu (jak w BaseLinker)
+
+import React, { useState } from 'react';
+import { Edit2, Trash2, MoreVertical, Package } from 'lucide-react';
+
+export default function OrderItemsTable({ items = [], currency = 'PLN', onItemUpdate, readOnly = false }) {
+    const [editingItem, setEditingItem] = useState(null);
+
+    const formatCurrency = (amount) => {
+        return new Intl.NumberFormat('pl-PL', {
+            style: 'currency',
+            currency: currency
+        }).format(amount);
+    };
+
+    const calculateItemTotal = (item) => {
+        const subtotal = item.quantity * item.price_gross;
+        const discount = item.discount_total || 0;
+        return subtotal - discount;
+    };
+
+    const handleItemEdit = (item) => {
+        setEditingItem({ ...item });
+    };
+
+    const handleItemSave = () => {
+        if (editingItem && onItemUpdate) {
+            onItemUpdate(editingItem.id, {
+                quantity: editingItem.quantity,
+                price_net: editingItem.price_net,
+                price_gross: editingItem.price_gross,
+                discount_total: editingItem.discount_total
+            });
+        }
+        setEditingItem(null);
+    };
+
+    const handleItemCancel = () => {
+        setEditingItem(null);
+    };
+
+    if (!items.length) {
+        return (
+            <div className="flex items-center justify-center py-12 text-gray-500">
+                <Package className="w-8 h-8 mr-3" />
+                <span>Brak produktów w zamówieniu</span>
+            </div>
+        );
+    }
+
+    return (
+        <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                    <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Nazwa/SKU
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Ilość
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Cena netto
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            VAT
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Cena brutto
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Wartość
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Data
+                        </th>
+                        {!readOnly && (
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Akcje
+                            </th>
+                        )}
+                    </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                    {items.map((item) => {
+                        const isEditing = editingItem && editingItem.id === item.id;
+                        
+                        return (
+                            <tr key={item.id} className={isEditing ? 'bg-blue-50' : 'hover:bg-gray-50'}>
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                    <div className="flex items-center">
+                                        <div className="flex-shrink-0 h-10 w-10">
+                                            <div className="h-10 w-10 rounded-lg bg-gray-200 flex items-center justify-center">
+                                                <Package className="w-5 h-5 text-gray-500" />
+                                            </div>
+                                        </div>
+                                        <div className="ml-4">
+                                            <div className="text-sm font-medium text-gray-900">
+                                                {item.name}
+                                            </div>
+                                            <div className="text-sm text-gray-500">
+                                                SKU: {item.sku}
+                                            </div>
+                                            {item.ean && (
+                                                <div className="text-xs text-gray-400">
+                                                    EAN: {item.ean}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </td>
+                                
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                    {isEditing ? (
+                                        <input
+                                            type="number"
+                                            value={editingItem.quantity}
+                                            onChange={(e) => setEditingItem({
+                                                ...editingItem,
+                                                quantity: parseInt(e.target.value)
+                                            })}
+                                            className="w-20 px-2 py-1 text-sm border rounded"
+                                            min="1"
+                                        />
+                                    ) : (
+                                        <span className="font-medium">{item.quantity}</span>
+                                    )}
+                                </td>
+                                
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                    {isEditing ? (
+                                        <input
+                                            type="number"
+                                            value={editingItem.price_net}
+                                            onChange={(e) => setEditingItem({
+                                                ...editingItem,
+                                                price_net: parseFloat(e.target.value)
+                                            })}
+                                            className="w-24 px-2 py-1 text-sm border rounded"
+                                            step="0.01"
+                                        />
+                                    ) : (
+                                        formatCurrency(item.price_net)
+                                    )}
+                                </td>
+                                
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                    {item.vat_rate}%
+                                </td>
+                                
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                    {isEditing ? (
+                                        <input
+                                            type="number"
+                                            value={editingItem.price_gross}
+                                            onChange={(e) => setEditingItem({
+                                                ...editingItem,
+                                                price_gross: parseFloat(e.target.value)
+                                            })}
+                                            className="w-24 px-2 py-1 text-sm border rounded"
+                                            step="0.01"
+                                        />
+                                    ) : (
+                                        <span className="font-medium">{formatCurrency(item.price_gross)}</span>
+                                    )}
+                                </td>
+                                
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                    <span className="font-semibold">
+                                        {formatCurrency(calculateItemTotal(isEditing ? editingItem : item))}
+                                    </span>
+                                    {item.discount_total > 0 && (
+                                        <div className="text-xs text-red-600">
+                                            Rabat: -{formatCurrency(item.discount_total)}
+                                        </div>
+                                    )}
+                                </td>
+                                
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    {new Date(item.created_at).toLocaleDateString('pl-PL')}
+                                </td>
+                                
+                                {!readOnly && (
+                                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                        {isEditing ? (
+                                            <div className="flex items-center space-x-2">
+                                                <button
+                                                    onClick={handleItemSave}
+                                                    className="text-green-600 hover:text-green-900"
+                                                >
+                                                    Zapisz
+                                                </button>
+                                                <button
+                                                    onClick={handleItemCancel}
+                                                    className="text-gray-600 hover:text-gray-900"
+                                                >
+                                                    Anuluj
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-center space-x-2">
+                                                <button
+                                                    onClick={() => handleItemEdit(item)}
+                                                    className="text-blue-600 hover:text-blue-900"
+                                                >
+                                                    <Edit2 className="w-4 h-4" />
+                                                </button>
+                                                <button className="text-red-600 hover:text-red-900">
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        )}
+                                    </td>
+                                )}
+                            </tr>
+                        );
+                    })}
+                </tbody>
+            </table>
+        </div>
+    );
+}

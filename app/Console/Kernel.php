@@ -2,6 +2,7 @@
 
 namespace App\Console;
 
+use App\Console\Commands\ImportOrdersCommand;
 use App\Console\Commands\RunIntegrationImportsCommand;
 use App\Console\Commands\SyncSupplierAvailabilityCommand;
 use Illuminate\Console\Scheduling\Schedule;
@@ -13,6 +14,7 @@ class Kernel extends ConsoleKernel
      * @var array<int, class-string>
      */
     protected $commands = [
+        ImportOrdersCommand::class,
         RunIntegrationImportsCommand::class,
         SyncSupplierAvailabilityCommand::class,
     ];
