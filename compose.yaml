@@ -6,6 +6,7 @@ services:
             args:
                 WWWGROUP: '${WWWGROUP}'
         image: 'sail-8.4/app'
+        restart: unless-stopped
         extra_hosts:
             - 'host.docker.internal:host-gateway'
         ports:
@@ -26,6 +27,7 @@ services:
             - redis
     pgsql:
         image: 'postgres:18-alpine'
+        restart: unless-stopped
         ports:
             - '${FORWARD_DB_PORT:-5435}:5432'
         environment:
@@ -51,6 +53,7 @@ services:
             timeout: 5s
     redis:
         image: 'redis:alpine'
+        restart: unless-stopped
         ports:
             - '${FORWARD_REDIS_PORT:-6379}:6379'
         volumes:

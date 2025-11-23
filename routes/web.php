@@ -200,3 +200,4 @@ Route::middleware(['auth', 'role:admin'])->group(function (): void {
     Route::put('/admin/users/{user}', [UserManagementController::class, 'update'])->name('admin.users.update');
     Route::delete('/admin/users/{user}', [UserManagementController::class, 'destroy'])->name('admin.users.destroy');
 });
+
