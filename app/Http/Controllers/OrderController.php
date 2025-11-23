@@ -4,9 +4,13 @@ namespace App\Http\Controllers;
 
 use App\Models\Order;
 use App\Models\Integration;
+use App\Models\OrderItem;
+use App\Models\IntegrationProductLink;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Auth;
+use App\Services\Warehouse\WarehouseDocumentService;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -263,6 +267,161 @@ class OrderController extends Controller
     }
 
     /**
+     * API: Pakowanie pozycji zamówienia (skaner) - inkrementuje quantity_shipped
+     */
+    public function packItem(Request $request, Order $order, $itemId): JsonResponse
+    {
+        $item = $order->items()->findOrFail($itemId);
+
+        $validated = $request->validate([
+            'quantity' => 'nullable|integer|min:1'
+        ]);
+
+        $increment = $validated['quantity'] ?? 1;
+        $remaining = max(0, $item->quantity - $item->quantity_shipped);
+
+        if ($remaining <= 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Wszystkie sztuki tej pozycji są już spakowane.'
+            ], 422);
+        }
+
+        $applied = min($increment, $remaining);
+        $item->quantity_shipped += $applied;
+        $item->save();
+
+        // Opcjonalnie: ustaw fulfillment_status na picking/ready_for_shipment jeśli wszystko spakowane
+        $order->refresh();
+        $allPacked = $order->items->every(fn ($row) => $row->quantity_shipped >= $row->quantity);
+        if ($allPacked && $order->fulfillment_status !== 'ready_for_shipment') {
+            $order->fulfillment_status = 'ready_for_shipment';
+            $order->save();
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => "Spakowano {$applied} szt.",
+            'item' => $item->fresh(),
+            'order_fulfillment_status' => $order->fulfillment_status,
+        ]);
+    }
+
+    /**
+     * Utwórz rezerwację magazynową z pozycji zamówienia (soft: zapis w meta)
+     */
+    public function createReservation(Request $request, Order $order): JsonResponse
+    {
+        if ($order->payment_status !== 'paid') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Rezerwację można utworzyć tylko dla opłaconych zamówień.'
+            ], 422);
+        }
+
+        $reservation = [
+            'created_at' => now()->toISOString(),
+            'items' => $order->items->map(fn (OrderItem $item) => [
+                'order_item_id' => $item->id,
+                'product_id' => $item->product_id,
+                'quantity' => $item->quantity,
+                'warehouse_location_id' => $item->warehouse_location_id,
+            ])->values(),
+        ];
+
+        $meta = $order->metadata ?? [];
+        $meta['reservation'] = $reservation;
+        $order->metadata = $meta;
+        $order->fulfillment_status = 'reserved';
+        $order->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Rezerwacja została utworzona (soft).',
+            'reservation' => $reservation,
+            'order' => $order->fresh(),
+        ]);
+    }
+
+    /**
+     * Konwersja rezerwacji do dokumentu WZ (tworzy WZ i linkuje w meta)
+     */
+    public function convertReservationToWz(Request $request, Order $order, WarehouseDocumentService $documentService): JsonResponse
+    {
+        $order->loadMissing('items');
+
+        if (empty($order->metadata['reservation']['items'])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Brak rezerwacji do konwersji.'
+            ], 422);
+        }
+
+        $items = [];
+        $warehouseId = null;
+
+        foreach ($order->items as $item) {
+            $productId = $item->product_id;
+            $itemWarehouse = $item->warehouse_location_id;
+
+            if (!$productId && $item->external_product_id) {
+                $link = IntegrationProductLink::query()
+                    ->where('integration_id', $order->integration_id)
+                    ->where('external_product_id', $item->external_product_id)
+                    ->first();
+                if ($link) {
+                    $productId = $link->product_id;
+                    $itemWarehouse = $itemWarehouse ?: $link->warehouse_location_id;
+                }
+            }
+
+            if (!$productId || !$itemWarehouse) {
+                continue;
+            }
+
+            $items[] = [
+                'product_id' => $productId,
+                'quantity' => $item->quantity,
+                'unit_price' => $item->unit_price_net ?? 0,
+                'vat_rate' => $item->vat_rate ?? 0,
+            ];
+
+            $warehouseId = $warehouseId ?: $itemWarehouse;
+        }
+
+        if (empty($items) || !$warehouseId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Brak mapowania produktów/magazynu do utworzenia WZ.'
+            ], 422);
+        }
+
+        $document = $documentService->create($request->user(), [
+            'warehouse_location_id' => $warehouseId,
+            'type' => 'WZ',
+            'issued_at' => now()->toDateString(),
+            'items' => $items,
+        ]);
+
+        $meta = $order->metadata ?? [];
+        $meta['reservation_wz'] = [
+            'warehouse_document_id' => $document->id,
+            'created_at' => now()->toISOString(),
+        ];
+
+        $order->metadata = $meta;
+        $order->fulfillment_status = 'ready_for_shipment';
+        $order->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Utworzono WZ z rezerwacji.',
+            'document_id' => $document->id,
+            'order' => $order->fresh(),
+        ]);
+    }
+
+    /**
      * Usunięcie zamówienia
      */
     public function destroy(Order $order): RedirectResponse
@@ -300,6 +459,7 @@ class OrderController extends Controller
         return Inertia::render('Orders/Settings', [
             'integrations' => Integration::select('id', 'name', 'type', 'config')
                 ->where('status', 'active')
+                ->where('user_id', Auth::id())
                 ->get()
                 ->map(function ($integration) {
                     return [
@@ -307,6 +467,7 @@ class OrderController extends Controller
                         'name' => $integration->name,
                         'type' => $integration->type,
                         'order_import_enabled' => $integration->config['order_import_enabled'] ?? false,
+                        'create_reservation_on_import' => $integration->config['create_reservation_on_import'] ?? false,
                     ];
                 }),
         ]);

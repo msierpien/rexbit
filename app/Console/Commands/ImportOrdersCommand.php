@@ -6,8 +6,10 @@ use App\Models\Integration;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\OrderAddress;
+use App\Models\IntegrationProductLink;
 use App\Integrations\IntegrationFactory;
 use App\Integrations\Contracts\OrderImportDriver;
+use App\Services\Warehouse\WarehouseDocumentService;
 use Illuminate\Console\Command;
 use Exception;
 use Carbon\Carbon;
@@ -35,13 +37,15 @@ class ImportOrdersCommand extends Command
     protected $description = 'Import zamówień z platform e-commerce (PrestaShop, WooCommerce, etc.)';
 
     protected IntegrationFactory $integrationFactory;
+    protected WarehouseDocumentService $warehouseDocumentService;
     protected int $totalImported = 0;
     protected int $totalErrors = 0;
 
-    public function __construct(IntegrationFactory $integrationFactory)
+    public function __construct(IntegrationFactory $integrationFactory, WarehouseDocumentService $warehouseDocumentService)
     {
         parent::__construct();
         $this->integrationFactory = $integrationFactory;
+        $this->warehouseDocumentService = $warehouseDocumentService;
     }
 
     public function handle(): int
@@ -167,6 +171,21 @@ class ImportOrdersCommand extends Command
             $driver->updateLastSyncDate($integration, Carbon::now()->toDateTimeString());
         }
 
+        // Auto-rezerwacja po imporcie dla zamówień opłaconych, jeśli włączona
+        if ($importedCount > 0 && !$this->option('dry-run') && ($integration->config['create_reservation_on_import'] ?? false)) {
+            $orders = Order::where('integration_id', $integration->id)
+                ->where('payment_status', 'paid')
+                ->whereDate('created_at', '>=', now()->subDay())
+                ->get();
+
+            foreach ($orders as $order) {
+                if (!empty($order->metadata['reservation_document'])) {
+                    continue;
+                }
+                $this->createReservationDocument($order);
+            }
+        }
+
         $this->info("  ✅ Zaimportowano {$importedCount} zamówień z integracji {$integration->name}");
     }
 
@@ -226,6 +245,7 @@ class ImportOrdersCommand extends Command
             'payment_status' => $orderData['payment_status'],
             'payment_method' => $orderData['payment_method'] ?? null,
             'is_paid' => $orderData['is_paid'] ?? false,
+            'paid_at' => $orderData['paid_at'] ?? null,
             'customer_name' => $orderData['customer_name'],
             'customer_email' => $orderData['customer_email'],
             'customer_phone' => $orderData['customer_phone'],
@@ -247,8 +267,24 @@ class ImportOrdersCommand extends Command
         // Dodaj pozycje zamówienia
         if (!empty($orderData['items'])) {
             foreach ($orderData['items'] as $itemData) {
+                $productId = $itemData['product_id'] ?? null;
+                $warehouseId = $itemData['warehouse_location_id'] ?? null;
+
+                // Ustal powiązanie z local product i magazynem przez integration_product_links
+                if (!$productId && !empty($itemData['external_product_id'])) {
+                    $link = IntegrationProductLink::query()
+                        ->where('integration_id', $integration->id)
+                        ->where('external_product_id', $itemData['external_product_id'])
+                        ->first();
+                    if ($link) {
+                        $productId = $link->product_id;
+                        $warehouseId = $warehouseId ?: $link->warehouse_location_id;
+                    }
+                }
+
                 OrderItem::create([
                     'order_id' => $order->id,
+                    'product_id' => $productId,
                     'external_product_id' => $itemData['external_product_id'],
                     'product_reference' => $itemData['product_reference'],
                     'name' => $itemData['name'],
@@ -263,6 +299,7 @@ class ImportOrdersCommand extends Command
                     'discount_total' => $itemData['discount_total'],
                     'weight' => $itemData['weight'],
                     'prestashop_data' => $itemData['prestashop_data'] ?? null,
+                    'warehouse_location_id' => $warehouseId,
                 ]);
             }
         }
@@ -299,6 +336,7 @@ class ImportOrdersCommand extends Command
             'payment_status' => $orderData['payment_status'],
             'payment_method' => $orderData['payment_method'] ?? $order->payment_method,
             'is_paid' => $orderData['is_paid'] ?? $order->is_paid,
+            'paid_at' => $orderData['paid_at'] ?? $order->paid_at,
             'total_net' => $orderData['total_net'],
             'total_gross' => $orderData['total_gross'],
             'total_paid' => $orderData['total_paid'] ?? $order->total_paid,
@@ -344,6 +382,66 @@ class ImportOrdersCommand extends Command
         }
 
         return $options;
+    }
+
+    protected function createReservationDocument(Order $order): void
+    {
+        $order->loadMissing('items');
+        if ($order->items->isEmpty()) {
+            return;
+        }
+
+        $items = [];
+        $warehouseId = null;
+
+        foreach ($order->items as $item) {
+            $productId = $item->product_id;
+            $itemWarehouse = $item->warehouse_location_id;
+
+            if (!$productId && $item->external_product_id) {
+                $link = IntegrationProductLink::query()
+                    ->where('integration_id', $order->integration_id)
+                    ->where('external_product_id', $item->external_product_id)
+                    ->first();
+                if ($link) {
+                    $productId = $link->product_id;
+                    $itemWarehouse = $itemWarehouse ?: $link->warehouse_location_id;
+                }
+            }
+
+            if (!$productId || !$itemWarehouse) {
+                continue;
+            }
+
+            $items[] = [
+                'product_id' => $productId,
+                'quantity' => $item->quantity,
+                'unit_price' => $item->unit_price_net ?? 0,
+                'vat_rate' => $item->vat_rate ?? 0,
+            ];
+
+            $warehouseId = $warehouseId ?: $itemWarehouse;
+        }
+
+        if (empty($items) || !$warehouseId) {
+            return;
+        }
+
+        $document = $this->warehouseDocumentService->create($order->user, [
+            'warehouse_location_id' => $warehouseId,
+            'type' => 'RES',
+            'issued_at' => now()->toDateString(),
+            'items' => $items,
+        ]);
+
+        $meta = $order->metadata ?? [];
+        $meta['reservation_document'] = [
+            'warehouse_document_id' => $document->id,
+            'created_at' => now()->toISOString(),
+        ];
+        $order->metadata = $meta;
+        $order->fulfillment_status = 'reserved';
+        $order->save();
     }
 
     protected function generateOrderNumber(): string

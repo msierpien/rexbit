@@ -1,20 +1,28 @@
-// OrderItemsTable.jsx - Tabela produktów w zamówieniu (jak w BaseLinker)
+// OrderItemsTable.jsx - tabela pozycji zamówienia z opcją edycji i pakowania
 
 import React, { useState } from 'react';
-import { Edit2, Trash2, MoreVertical, Package } from 'lucide-react';
+import { Edit2, Trash2, Package, Check } from 'lucide-react';
 
-export default function OrderItemsTable({ items = [], currency = 'PLN', onItemUpdate, readOnly = false }) {
+export default function OrderItemsTable({
+    items = [],
+    currency = 'PLN',
+    onItemUpdate,
+    onPack,
+    packingEnabled = false,
+    readOnly = false,
+}) {
     const [editingItem, setEditingItem] = useState(null);
+    const [packQty, setPackQty] = useState({});
 
     const formatCurrency = (amount) => {
         return new Intl.NumberFormat('pl-PL', {
             style: 'currency',
-            currency: currency
-        }).format(amount);
+            currency: currency,
+        }).format(amount ?? 0);
     };
 
     const calculateItemTotal = (item) => {
-        const subtotal = item.quantity * item.price_gross;
+        const subtotal = (item.quantity ?? 0) * (item.price_gross ?? 0);
         const discount = item.discount_total || 0;
         return subtotal - discount;
     };
@@ -29,7 +37,7 @@ export default function OrderItemsTable({ items = [], currency = 'PLN', onItemUp
                 quantity: editingItem.quantity,
                 price_net: editingItem.price_net,
                 price_gross: editingItem.price_gross,
-                discount_total: editingItem.discount_total
+                discount_total: editingItem.discount_total,
             });
         }
         setEditingItem(null);
@@ -37,6 +45,13 @@ export default function OrderItemsTable({ items = [], currency = 'PLN', onItemUp
 
     const handleItemCancel = () => {
         setEditingItem(null);
+    };
+
+    const handlePack = (itemId) => {
+        if (!onPack) return;
+        const qty = parseInt(packQty[itemId] ?? 1, 10);
+        const safeQty = isNaN(qty) || qty <= 0 ? 1 : qty;
+        onPack(itemId, safeQty);
     };
 
     if (!items.length) {
@@ -72,7 +87,7 @@ export default function OrderItemsTable({ items = [], currency = 'PLN', onItemUp
                             Wartość
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Data
+                            Spakowane
                         </th>
                         {!readOnly && (
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -84,58 +99,49 @@ export default function OrderItemsTable({ items = [], currency = 'PLN', onItemUp
                 <tbody className="bg-white divide-y divide-gray-200">
                     {items.map((item) => {
                         const isEditing = editingItem && editingItem.id === item.id;
-                        
+                        const shipped = item.quantity_shipped ?? 0;
+                        const qty = item.quantity ?? 0;
+
                         return (
                             <tr key={item.id} className={isEditing ? 'bg-blue-50' : 'hover:bg-gray-50'}>
                                 <td className="px-6 py-4 whitespace-nowrap">
-                                    <div className="flex items-center">
-                                        <div className="flex-shrink-0 h-10 w-10">
-                                            <div className="h-10 w-10 rounded-lg bg-gray-200 flex items-center justify-center">
-                                                <Package className="w-5 h-5 text-gray-500" />
-                                            </div>
-                                        </div>
-                                        <div className="ml-4">
-                                            <div className="text-sm font-medium text-gray-900">
-                                                {item.name}
-                                            </div>
-                                            <div className="text-sm text-gray-500">
-                                                SKU: {item.sku}
-                                            </div>
-                                            {item.ean && (
-                                                <div className="text-xs text-gray-400">
-                                                    EAN: {item.ean}
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
+                                    <div className="text-sm font-medium text-gray-900">{item.name}</div>
+                                    <div className="text-sm text-gray-500">SKU: {item.sku}</div>
+                                    {item.ean && (
+                                        <div className="text-xs text-gray-400">EAN: {item.ean}</div>
+                                    )}
                                 </td>
-                                
+
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                     {isEditing ? (
                                         <input
                                             type="number"
                                             value={editingItem.quantity}
-                                            onChange={(e) => setEditingItem({
-                                                ...editingItem,
-                                                quantity: parseInt(e.target.value)
-                                            })}
-                                            className="w-20 px-2 py-1 text-sm border rounded"
+                                            onChange={(e) =>
+                                                setEditingItem({
+                                                    ...editingItem,
+                                                    quantity: parseInt(e.target.value, 10) || 0,
+                                                })
+                                            }
+                                            className="w-24 px-2 py-1 text-sm border rounded"
                                             min="1"
                                         />
                                     ) : (
-                                        <span className="font-medium">{item.quantity}</span>
+                                        qty
                                     )}
                                 </td>
-                                
+
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                     {isEditing ? (
                                         <input
                                             type="number"
                                             value={editingItem.price_net}
-                                            onChange={(e) => setEditingItem({
-                                                ...editingItem,
-                                                price_net: parseFloat(e.target.value)
-                                            })}
+                                            onChange={(e) =>
+                                                setEditingItem({
+                                                    ...editingItem,
+                                                    price_net: parseFloat(e.target.value),
+                                                })
+                                            }
                                             className="w-24 px-2 py-1 text-sm border rounded"
                                             step="0.01"
                                         />
@@ -143,20 +149,22 @@ export default function OrderItemsTable({ items = [], currency = 'PLN', onItemUp
                                         formatCurrency(item.price_net)
                                     )}
                                 </td>
-                                
+
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                     {item.vat_rate}%
                                 </td>
-                                
+
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                     {isEditing ? (
                                         <input
                                             type="number"
                                             value={editingItem.price_gross}
-                                            onChange={(e) => setEditingItem({
-                                                ...editingItem,
-                                                price_gross: parseFloat(e.target.value)
-                                            })}
+                                            onChange={(e) =>
+                                                setEditingItem({
+                                                    ...editingItem,
+                                                    price_gross: parseFloat(e.target.value),
+                                                })
+                                            }
                                             className="w-24 px-2 py-1 text-sm border rounded"
                                             step="0.01"
                                         />
@@ -164,7 +172,7 @@ export default function OrderItemsTable({ items = [], currency = 'PLN', onItemUp
                                         <span className="font-medium">{formatCurrency(item.price_gross)}</span>
                                     )}
                                 </td>
-                                
+
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                     <span className="font-semibold">
                                         {formatCurrency(calculateItemTotal(isEditing ? editingItem : item))}
@@ -175,11 +183,34 @@ export default function OrderItemsTable({ items = [], currency = 'PLN', onItemUp
                                         </div>
                                     )}
                                 </td>
-                                
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                    {new Date(item.created_at).toLocaleDateString('pl-PL')}
+
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                    {shipped} / {qty}
+                                    {packingEnabled && onPack && (
+                                        <div className="mt-2 flex items-center gap-2">
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                value={packQty[item.id] ?? 1}
+                                                onChange={(e) =>
+                                                    setPackQty((prev) => ({
+                                                        ...prev,
+                                                        [item.id]: e.target.value,
+                                                    }))
+                                                }
+                                                className="w-20 px-2 py-1 text-sm border rounded"
+                                            />
+                                            <button
+                                                onClick={() => handlePack(item.id)}
+                                                className="inline-flex items-center px-3 py-1 text-xs font-medium text-white bg-green-600 rounded hover:bg-green-700"
+                                            >
+                                                <Check className="w-4 h-4 mr-1" />
+                                                Pakuj
+                                            </button>
+                                        </div>
+                                    )}
                                 </td>
-                                
+
                                 {!readOnly && (
                                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                         {isEditing ? (
@@ -198,15 +229,17 @@ export default function OrderItemsTable({ items = [], currency = 'PLN', onItemUp
                                                 </button>
                                             </div>
                                         ) : (
-                                            <div className="flex items-center space-x-2">
-                                                <button
-                                                    onClick={() => handleItemEdit(item)}
-                                                    className="text-blue-600 hover:text-blue-900"
-                                                >
-                                                    <Edit2 className="w-4 h-4" />
-                                                </button>
-                                                <button className="text-red-600 hover:text-red-900">
-                                                    <Trash2 className="w-4 h-4" />
+                                            <div className="flex items-center space-x-3">
+                                                {!packingEnabled && (
+                                                    <button
+                                                        onClick={() => handleItemEdit(item)}
+                                                        className="text-blue-600 hover:text-blue-900 inline-flex items-center gap-1"
+                                                    >
+                                                        <Edit2 className="w-4 h-4" /> Edytuj
+                                                    </button>
+                                                )}
+                                                <button className="text-red-600 hover:text-red-900 inline-flex items-center gap-1">
+                                                    <Trash2 className="w-4 h-4" /> Usuń
                                                 </button>
                                             </div>
                                         )}

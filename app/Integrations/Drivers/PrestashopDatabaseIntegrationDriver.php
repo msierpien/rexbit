@@ -38,6 +38,8 @@ class PrestashopDatabaseIntegrationDriver implements IntegrationDriver
             'id_shop' => ['nullable', 'integer', 'min:1'],
             'id_lang' => ['nullable', 'integer', 'min:1'],
             'product_listing_enabled' => ['sometimes', 'boolean'],
+            'order_import_enabled' => ['sometimes', 'boolean'],
+            'create_reservation_on_import' => ['sometimes', 'boolean'],
         ];
     }
 
@@ -57,6 +59,8 @@ class PrestashopDatabaseIntegrationDriver implements IntegrationDriver
             'id_shop' => 1,
             'id_lang' => 1,
             'product_listing_enabled' => false,
+            'order_import_enabled' => false,
+            'create_reservation_on_import' => false,
         ];
     }
 
@@ -84,6 +88,14 @@ class PrestashopDatabaseIntegrationDriver implements IntegrationDriver
             'id_lang' => $idLang > 0 ? $idLang : 1,
             'product_listing_enabled' => filter_var(
                 Arr::get($config, 'product_listing_enabled', false),
+                FILTER_VALIDATE_BOOL
+            ),
+            'order_import_enabled' => filter_var(
+                Arr::get($config, 'order_import_enabled', false),
+                FILTER_VALIDATE_BOOL
+            ),
+            'create_reservation_on_import' => filter_var(
+                Arr::get($config, 'create_reservation_on_import', false),
                 FILTER_VALIDATE_BOOL
             ),
         ];

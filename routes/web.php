@@ -41,7 +41,14 @@ Route::middleware(['auth', 'role:user,admin'])->group(function (): void {
     Route::get('/dashboard', UserDashboardController::class)->name('dashboard');
     
     // 📦 ORDERS - Zamówienia (nowy moduł)
-    
+
+    // Statusy zamówień (PRZED resource /orders żeby uniknąć konfliktu z {order})
+    Route::resource('/orders/statuses', OrderStatusController::class)
+        ->names('orders.statuses')
+        ->except(['show']);
+    Route::post('/orders/statuses/update-order', [OrderStatusController::class, 'updateOrder'])
+        ->name('orders.statuses.update-order');
+
     // Specjalne routes (muszą być PRZED resource route)
     Route::delete('/orders/bulk', [\App\Http\Controllers\OrderController::class, 'bulkDestroy'])
         ->name('orders.bulk-delete');
@@ -59,14 +66,13 @@ Route::middleware(['auth', 'role:user,admin'])->group(function (): void {
         ->name('orders.update-status');
     Route::put('/orders/{order}/items/{item}', [\App\Http\Controllers\OrderController::class, 'updateItem'])
         ->name('orders.items.update');
-        
-    // Statusy zamówień
-    Route::resource('/orders/statuses', OrderStatusController::class)
-        ->names('orders.statuses')
-        ->except(['show']);
-    Route::post('/orders/statuses/update-order', [OrderStatusController::class, 'updateOrder'])
-        ->name('orders.statuses.update-order');
-
+    Route::put('/orders/{order}/items/{item}/pack', [\App\Http\Controllers\OrderController::class, 'packItem'])
+        ->name('orders.items.pack');
+    Route::post('/orders/{order}/reservation', [\App\Http\Controllers\OrderController::class, 'createReservation'])
+        ->name('orders.reservation.create');
+    Route::post('/orders/{order}/reservation/wz', [\App\Http\Controllers\OrderController::class, 'convertReservationToWz'])
+        ->name('orders.reservation.to-wz');
+    
     Route::resource('/integrations', IntegrationController::class)
         ->except(['show'])
         ->names('integrations');

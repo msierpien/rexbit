@@ -33,6 +33,8 @@ class PrestashopIntegrationDriver implements IntegrationDriver
                 ? ['nullable', 'string', 'min:8']
                 : ['required', 'string', 'min:8'],
             'product_listing_enabled' => ['sometimes', 'boolean'],
+            'order_import_enabled' => ['sometimes', 'boolean'],
+            'create_reservation_on_import' => ['sometimes', 'boolean'],
             'inventory_sync_mode' => ['required', 'in:disabled,local_to_presta,prestashop_to_local'],
             'inventory_sync_interval_minutes' => ['nullable', 'integer', 'min:5'],
             'primary_warehouse_id' => ['nullable', 'integer', 'exists:warehouse_locations,id', 'required_if:inventory_sync_mode,local_to_presta'],
@@ -49,6 +51,8 @@ class PrestashopIntegrationDriver implements IntegrationDriver
             'base_url' => '',
             'api_key' => '',
             'product_listing_enabled' => false,
+            'order_import_enabled' => false,
+            'create_reservation_on_import' => false,
             'inventory_sync_mode' => 'disabled',
             'inventory_sync_interval_minutes' => 180,
             'primary_warehouse_id' => null,
@@ -80,6 +84,14 @@ class PrestashopIntegrationDriver implements IntegrationDriver
             'base_url' => $baseUrl,
             'product_listing_enabled' => filter_var(
                 Arr::get($config, 'product_listing_enabled', false),
+                FILTER_VALIDATE_BOOL
+            ),
+            'order_import_enabled' => filter_var(
+                Arr::get($config, 'order_import_enabled', false),
+                FILTER_VALIDATE_BOOL
+            ),
+            'create_reservation_on_import' => filter_var(
+                Arr::get($config, 'create_reservation_on_import', false),
                 FILTER_VALIDATE_BOOL
             ),
             'inventory_sync_mode' => $mode,

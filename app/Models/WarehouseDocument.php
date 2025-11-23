@@ -200,19 +200,33 @@ class WarehouseDocument extends Model
                 'incoming' => 0,
             ]);
 
-            $quantityChange = $this->getQuantityChangeForType($item->quantity);
+            if ($this->type === 'RES') {
+                $stockTotal->reserved += $item->quantity;
+                $stockTotal->save();
 
-            $stockTotal->on_hand += $quantityChange;
-            $stockTotal->save();
+                $this->logCustomAction('reservation_created', [
+                    'document_type' => $this->type,
+                    'document_number' => $this->number,
+                    'product_id' => $item->product_id,
+                    'reserved_change' => $item->quantity,
+                    'new_reserved' => $stockTotal->reserved,
+                ]);
+            } else {
+                $quantityChange = $this->getQuantityChangeForType($item->quantity);
 
-            // Log stock movement in audit trail
-            $this->logCustomAction('stock_movement_applied', [
-                'document_type' => $this->type,
-                'document_number' => $this->number,
-                'product_id' => $item->product_id,
-                'quantity_change' => $quantityChange,
-                'new_stock_level' => $stockTotal->on_hand,
-            ]);
+                $stockTotal->on_hand += $quantityChange;
+                $stockTotal->save();
+
+                // Log stock movement in audit trail
+                $this->logCustomAction('stock_movement_applied', [
+                    'document_type' => $this->type,
+                    'document_number' => $this->number,
+                    'product_id' => $item->product_id,
+                    'quantity_change' => $quantityChange,
+                    'new_stock_level' => $stockTotal->on_hand,
+                ]);
+            }
+
         }
     }
 
@@ -229,23 +243,36 @@ class WarehouseDocument extends Model
             ])->first();
 
             if ($stockTotal) {
-                $quantityChange = $this->getQuantityChangeForType($item->quantity);
-                
-                // Reverse the movement by subtracting the original change
-                $stockTotal->on_hand -= $quantityChange;
-                
-                // Ensure stock doesn't go negative
-                $stockTotal->on_hand = max(0, $stockTotal->on_hand);
-                $stockTotal->save();
+                if ($this->type === 'RES') {
+                    $stockTotal->reserved = max(0, $stockTotal->reserved - $item->quantity);
+                    $stockTotal->save();
 
-                // Log stock movement reversal in audit trail
-                $this->logCustomAction('stock_movement_reversed', [
-                    'document_type' => $this->type,
-                    'document_number' => $this->number,
-                    'product_id' => $item->product_id,
-                    'quantity_change' => -$quantityChange,
-                    'new_stock_level' => $stockTotal->on_hand,
-                ]);
+                    $this->logCustomAction('reservation_released', [
+                        'document_type' => $this->type,
+                        'document_number' => $this->number,
+                        'product_id' => $item->product_id,
+                        'reserved_change' => -$item->quantity,
+                        'new_reserved' => $stockTotal->reserved,
+                    ]);
+                } else {
+                    $quantityChange = $this->getQuantityChangeForType($item->quantity);
+                    
+                    // Reverse the movement by subtracting the original change
+                    $stockTotal->on_hand -= $quantityChange;
+                    
+                    // Ensure stock doesn't go negative
+                    $stockTotal->on_hand = max(0, $stockTotal->on_hand);
+                    $stockTotal->save();
+
+                    // Log stock movement reversal in audit trail
+                    $this->logCustomAction('stock_movement_reversed', [
+                        'document_type' => $this->type,
+                        'document_number' => $this->number,
+                        'product_id' => $item->product_id,
+                        'quantity_change' => -$quantityChange,
+                        'new_stock_level' => $stockTotal->on_hand,
+                    ]);
+                }
             }
         }
     }

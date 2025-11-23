@@ -391,6 +391,7 @@ class PrestashopDatabaseOrderImportDriver implements OrderImportDriver
             'shipping_details' => $shippingDetails,
             'discount_total' => (float)($rawOrderData['total_discounts'] ?? 0),
             'order_date' => $rawOrderData['date_add'] ?? null,
+            'paid_at' => $isPaid ? ($rawOrderData['invoice_date'] ?? $rawOrderData['date_upd'] ?? null) : null,
             'notes' => $rawOrderData['note'] ?? null,
             'invoice_data' => $invoiceData,
             'is_company' => $isCompany,

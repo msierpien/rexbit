@@ -52,15 +52,16 @@ class PrestashopApiOrderImportDriver implements OrderImportDriver
         $filters = [];
         
         if (!empty($options['date_from'])) {
-            $filters['date_add'] = '[' . $options['date_from'] . ',]';
+            // date_upd jest bezpieczniejsza niż date_add dla wielu instalacji PS WebService
+            $filters['date_upd'] = '[' . $options['date_from'] . ',]';
         }
         
         if (!empty($options['date_to'])) {
-            if (isset($filters['date_add'])) {
+            if (isset($filters['date_upd'])) {
                 // Aktualizuj istniejący filtr
-                $filters['date_add'] = '[' . $options['date_from'] . ',' . $options['date_to'] . ']';
+                $filters['date_upd'] = '[' . ($options['date_from'] ?? '') . ',' . $options['date_to'] . ']';
             } else {
-                $filters['date_add'] = '[,' . $options['date_to'] . ']';
+                $filters['date_upd'] = '[,' . $options['date_to'] . ']';
             }
         }
 
@@ -74,7 +75,7 @@ class PrestashopApiOrderImportDriver implements OrderImportDriver
 
         // Pobierz listę ID zamówień z filtrami
         $orderIds = $this->fetchOrderIds($config, $filters, $limit, $offset);
-        
+
         if (empty($orderIds['orders'])) {
             return [
                 'orders' => [],
@@ -90,7 +91,28 @@ class PrestashopApiOrderImportDriver implements OrderImportDriver
             try {
                 $orderDetail = $this->fetchOrderById($config, $orderId);
                 if ($orderDetail) {
-                    $orders[] = $this->normalizeOrderData($orderDetail);
+                    // Wyciągnij ID z potencjalnych tablic
+                    $idCustomer = $this->extractScalarValue($orderDetail['id_customer'] ?? '');
+                    $idAddressDelivery = $this->extractScalarValue($orderDetail['id_address_delivery'] ?? '');
+                    $idAddressInvoice = $this->extractScalarValue($orderDetail['id_address_invoice'] ?? '');
+                    
+                    // Pobierz pełne dane zamówienia (klient, adresy, produkty)
+                    $customer = $idCustomer ? $this->fetchCustomerById($config, $idCustomer) : null;
+                    $addresses = [];
+                    if ($idAddressDelivery) {
+                        $addresses['shipping'] = $this->fetchAddressById($config, $idAddressDelivery);
+                    }
+                    if ($idAddressInvoice) {
+                        $addresses['billing'] = $this->fetchAddressById($config, $idAddressInvoice);
+                    }
+                    $orderItems = $this->fetchOrderItems($config, $orderId);
+                    
+                    // Normalizuj dane zamówienia
+                    $normalizedOrder = $this->normalizeOrderData($orderDetail, $customer, $addresses, $config);
+                    $normalizedOrder['items'] = array_map([$this, 'normalizeOrderItem'], $orderItems);
+                    $normalizedOrder['addresses'] = $addresses;
+                    
+                    $orders[] = $normalizedOrder;
                 }
             } catch (Exception $e) {
                 // Log błąd ale kontynuuj dla pozostałych zamówień
@@ -120,7 +142,7 @@ class PrestashopApiOrderImportDriver implements OrderImportDriver
         $addresses = $this->fetchOrderAddresses($config, $orderData);
         $orderDetails = $this->fetchOrderItems($config, $externalOrderId);
 
-        $normalizedOrder = $this->normalizeOrderData($orderData, $customer);
+        $normalizedOrder = $this->normalizeOrderData($orderData, $customer, $addresses, $config);
         $normalizedOrder['items'] = array_map([$this, 'normalizeOrderItem'], $orderDetails);
         $normalizedOrder['addresses'] = $addresses;
 
@@ -132,7 +154,8 @@ class PrestashopApiOrderImportDriver implements OrderImportDriver
         $queryParams = [
             'display' => '[id]',
             'limit' => "$offset,$limit",
-            'sort' => '[date_add_DESC]'
+            // Niektóre instancje PS WebService nie pozwalają sortować po date_add – domyślnie sortujemy po id
+            'sort' => '[id_DESC]'
         ];
 
         // Dodaj filtry
@@ -143,38 +166,82 @@ class PrestashopApiOrderImportDriver implements OrderImportDriver
         $url = $this->buildApiUrl($config, 'orders', $queryParams);
         
         try {
-            $response = $this->httpClient->get($url, [
-                'auth' => [$config['api_key'], ''],
-                'headers' => ['Accept' => 'application/xml']
-            ]);
-
-            $xml = simplexml_load_string($response->getBody()->getContents());
-            
-            $orderIds = [];
-            if (isset($xml->orders->order)) {
-                foreach ($xml->orders->order as $order) {
-                    $orderIds[] = (string)$order['id'];
-                }
-            }
-
-            // Policz total (niestety PrestaShop API nie zwraca tego bezpośrednio)
-            $totalCount = $this->countTotalOrders($config, $filters);
-
-            return [
-                'orders' => $orderIds,
-                'total_count' => $totalCount,
-                'has_more' => ($offset + $limit) < $totalCount,
-                'next_offset' => ($offset + $limit) < $totalCount ? $offset + $limit : null
-            ];
-
+            return $this->performOrderIdRequest($config, $url, $filters, $limit, $offset);
         } catch (RequestException $e) {
-            throw new Exception('Błąd API PrestaShop: ' . $e->getMessage());
+            $this->logApiError($e, $url);
+
+            // Fallback 1: usuń sort
+            unset($queryParams['sort']);
+            $fallbackUrl = $this->buildApiUrl($config, 'orders', $queryParams);
+
+            try {
+                return $this->performOrderIdRequest($config, $fallbackUrl, $filters, $limit, $offset);
+            } catch (RequestException $e2) {
+                $this->logApiError($e2, $fallbackUrl);
+
+                // Fallback 2: jeśli brak filtra daty, ogranicz do ostatnich 7 dni po date_upd
+                if (empty($filters['date_upd']) && empty($filters['date_add'])) {
+                    $sevenDaysAgo = now()->subDays(7)->format('Y-m-d');
+                    $filters['date_upd'] = '[' . $sevenDaysAgo . ',]';
+                    $queryParams['filter[date_upd]'] = $filters['date_upd'];
+                    try {
+                        $dateFilteredUrl = $this->buildApiUrl($config, 'orders', $queryParams);
+                        return $this->performOrderIdRequest($config, $dateFilteredUrl, $filters, $limit, $offset);
+                    } catch (\Throwable $e3) {
+                        $this->logApiError($e3, $this->buildApiUrl($config, 'orders', $queryParams));
+                    }
+                }
+
+                throw new Exception('Błąd API PrestaShop: ' . ($e2->getMessage()));
+            } catch (\Throwable $inner) {
+                throw new Exception('Błąd API PrestaShop: ' . $inner->getMessage());
+            }
         }
+    }
+
+    protected function performOrderIdRequest(array $config, string $url, array $filters, int $limit, int $offset): array
+    {
+        $response = $this->httpClient->get($url, [
+            'auth' => [$config['api_key'], ''],
+            'headers' => ['Accept' => 'application/xml']
+        ]);
+
+        $xml = simplexml_load_string($response->getBody()->getContents());
+        
+        $orderIds = [];
+        if (isset($xml->orders->order)) {
+            foreach ($xml->orders->order as $order) {
+                $orderIds[] = (string)$order->id;
+            }
+        }
+
+        // Policz total (niestety PrestaShop API nie zwraca tego bezpośrednio)
+        $totalCount = $this->countTotalOrders($config, $filters);
+
+        return [
+            'orders' => $orderIds,
+            'total_count' => $totalCount,
+            'has_more' => ($offset + $limit) < $totalCount,
+            'next_offset' => ($offset + $limit) < $totalCount ? $offset + $limit : null
+        ];
+    }
+
+    protected function logApiError(\Throwable $exception, string $url): void
+    {
+        $status = method_exists($exception, 'getResponse') ? $exception->getResponse()?->getStatusCode() : null;
+        $body = method_exists($exception, 'getResponse') ? (string) $exception->getResponse()?->getBody() : null;
+
+        logger()->error('PrestaShop API error during order fetch', [
+            'url' => $url,
+            'status' => $status,
+            'message' => $exception->getMessage(),
+            'body' => $body,
+        ]);
     }
 
     protected function fetchOrderById(array $config, string $orderId): ?array
     {
-        $url = $this->buildApiUrl($config, "orders/$orderId");
+        $url = $this->buildApiUrl($config, "orders/$orderId", ['display' => 'full']);
 
         try {
             $response = $this->httpClient->get($url, [
@@ -303,7 +370,7 @@ class PrestashopApiOrderImportDriver implements OrderImportDriver
             'product_reference' => $item['product_reference'] ?? null,
             'name' => $item['product_name'] ?? null,
             'sku' => $item['product_reference'] ?? null,
-            'ean' => $item['product_ean13'] ?: null,
+            'ean' => $item['product_ean13'] ?? null,
             'quantity' => (int)($item['product_quantity'] ?? 0),
             'unit_price_net' => (float)($item['unit_price_tax_excl'] ?? 0),
             'unit_price_gross' => (float)($item['unit_price_tax_incl'] ?? 0),
@@ -316,30 +383,74 @@ class PrestashopApiOrderImportDriver implements OrderImportDriver
         ];
     }
 
-    public function normalizeOrderData(array $rawOrderData, ?array $customer = null): array
+    public function normalizeOrderData(array $rawOrderData, ?array $customer = null, ?array $addresses = null, ?array $config = null): array
     {
-        $paymentMethod = $rawOrderData['payment'] ?? ($rawOrderData['payment_method'] ?? null);
-        $totalPaid = (float)($rawOrderData['total_paid'] ?? 0);
-        $totalOrder = (float)($rawOrderData['total_paid_tax_incl'] ?? $rawOrderData['total_paid'] ?? 0);
+        // Wyciągnij wartości skalarne z potencjalnych tablic
+        $paymentMethod = $this->extractScalarValue($rawOrderData['payment'] ?? ($rawOrderData['payment_method'] ?? ''));
+        $totalPaid = (float)$this->extractScalarValue($rawOrderData['total_paid'] ?? 0);
+        $totalOrder = (float)$this->extractScalarValue($rawOrderData['total_paid_tax_incl'] ?? $rawOrderData['total_paid'] ?? 0);
         $isPaid = $totalPaid > 0 && $totalPaid >= $totalOrder;
 
         $shippingMethod = null;
         $shippingDetails = null;
-        if (!empty($rawOrderData['id_carrier'])) {
-            $shippingMethod = $rawOrderData['id_carrier'];
-            $shippingDetails = ['carrier_id' => $rawOrderData['id_carrier']];
+        $idCarrier = $this->extractScalarValue($rawOrderData['id_carrier'] ?? '');
+        $idCart = $this->extractScalarValue($rawOrderData['id_cart'] ?? '');
+        
+        if (!empty($idCarrier)) {
+            // Spróbuj pobrać nazwę przewoźnika
+            $shippingMethod = $config ? $this->getCarrierName($idCarrier, $config) : $idCarrier;
+            $shippingDetails = ['carrier_id' => $idCarrier];
+            
+            // Jeśli mamy id_cart, spróbuj pobrać dane o paczkomacie InPost
+            if (!empty($idCart) && $config) {
+                $parcelLockerData = $this->fetchInPostParcelLocker($idCart, $config);
+                if ($parcelLockerData) {
+                    $shippingDetails['parcel_locker'] = $parcelLockerData['machine'];
+                    $shippingDetails['tracking_number'] = $parcelLockerData['tracking_number'] ?? null;
+                    // Zaktualizuj metodę wysyłki jeśli to InPost
+                    if (!empty($parcelLockerData['machine'])) {
+                        $shippingMethod = 'InPost Paczkomat ' . $parcelLockerData['machine'];
+                    }
+                }
+            }
         }
 
-        $invoiceData = $rawOrderData['invoice_address'] ?? ($rawOrderData['invoice'] ?? null);
+        // Obsłuż dane do faktury z adresów
+        $invoiceData = null;
         $isCompany = false;
-        if (is_array($invoiceData) && !empty($invoiceData['company'])) {
-            $isCompany = true;
+        if ($addresses && isset($addresses['invoice'])) {
+            $invoiceData = $addresses['invoice'];
+            $isCompany = !empty($invoiceData['company']);
+        } elseif (!empty($rawOrderData['invoice_address']) || !empty($rawOrderData['invoice'])) {
+            $invoiceData = $rawOrderData['invoice_address'] ?? $rawOrderData['invoice'];
+            if (is_array($invoiceData) && !empty($invoiceData['company'])) {
+                $isCompany = true;
+            }
         }
+
+        // Wyciągnij current_state - może być string lub tablica
+        $currentState = $this->extractScalarValue($rawOrderData['current_state'] ?? '');
+        $idCurrency = $this->extractScalarValue($rawOrderData['id_currency'] ?? '');
+        $externalOrderId = $this->extractScalarValue($rawOrderData['id'] ?? $rawOrderData['id_order'] ?? '');
+        $reference = $this->extractScalarValue($rawOrderData['reference'] ?? '');
+        $totalNet = (float)$this->extractScalarValue($rawOrderData['total_paid_tax_excl'] ?? $rawOrderData['total_paid'] ?? 0);
+        $totalGross = (float)$this->extractScalarValue($rawOrderData['total_paid_tax_incl'] ?? $rawOrderData['total_paid'] ?? 0);
+        $shippingCost = (float)$this->extractScalarValue($rawOrderData['total_shipping'] ?? 0);
+        $discountTotal = (float)$this->extractScalarValue($rawOrderData['total_discounts'] ?? 0);
+        $dateAdd = $this->extractScalarValue($rawOrderData['date_add'] ?? '');
+        $dateUpd = $this->extractScalarValue($rawOrderData['date_upd'] ?? '');
+        $invoiceDate = $this->extractScalarValue($rawOrderData['invoice_date'] ?? '');
+        $note = $this->extractScalarValue($rawOrderData['note'] ?? '');
+
+        // Waliduj daty - PrestaShop często używa '0000-00-00 00:00:00' dla pustych dat
+        $validDateAdd = $this->validateDate($dateAdd);
+        $validDateUpd = $this->validateDate($dateUpd);
+        $validInvoiceDate = $this->validateDate($invoiceDate);
 
         return [
-            'external_order_id' => $rawOrderData['id'] ?? $rawOrderData['id_order'],
-            'external_reference' => $rawOrderData['reference'] ?? null,
-            'status' => $this->mapOrderStatus($rawOrderData['current_state'] ?? '', 'prestashop'),
+            'external_order_id' => $externalOrderId,
+            'external_reference' => $reference ?: null,
+            'status' => $this->mapOrderStatus($currentState, 'prestashop'),
             'payment_status' => $this->mapPaymentStatus($rawOrderData, 'prestashop'),
             'payment_method' => $paymentMethod,
             'is_paid' => $isPaid,
@@ -347,16 +458,17 @@ class PrestashopApiOrderImportDriver implements OrderImportDriver
                 trim(($customer['firstname'] ?? '') . ' ' . ($customer['lastname'] ?? '')) : null,
             'customer_email' => $customer['email'] ?? null,
             'customer_phone' => null, // Trzeba pobrać z adresu
-            'currency' => $this->getCurrencyIsoCode($rawOrderData['id_currency'] ?? null),
-            'total_net' => (float)($rawOrderData['total_paid_tax_excl'] ?? $rawOrderData['total_paid'] ?? 0),
-            'total_gross' => (float)($rawOrderData['total_paid_tax_incl'] ?? $rawOrderData['total_paid'] ?? 0),
+            'currency' => $this->getCurrencyIsoCode($idCurrency),
+            'total_net' => $totalNet,
+            'total_gross' => $totalGross,
             'total_paid' => $totalPaid,
-            'shipping_cost' => (float)($rawOrderData['total_shipping'] ?? 0),
+            'shipping_cost' => $shippingCost,
             'shipping_method' => $shippingMethod,
             'shipping_details' => $shippingDetails,
-            'discount_total' => (float)($rawOrderData['total_discounts'] ?? 0),
-            'order_date' => $rawOrderData['date_add'] ?? null,
-            'notes' => $rawOrderData['note'] ?: null,
+            'discount_total' => $discountTotal,
+            'order_date' => $validDateAdd,
+            'paid_at' => $isPaid ? ($validInvoiceDate ?: $validDateUpd) : null,
+            'notes' => $note ?: null,
             'invoice_data' => $invoiceData,
             'is_company' => $isCompany,
             'prestashop_data' => $rawOrderData
@@ -375,6 +487,84 @@ class PrestashopApiOrderImportDriver implements OrderImportDriver
         $meta = $integration->meta ?? [];
         $meta['order_import']['last_sync_date'] = $date;
         $integration->update(['meta' => $meta]);
+    }
+
+    /**
+     * Pobiera nazwę przewoźnika z cache lub API
+     */
+    protected function getCarrierName(string $carrierId): ?string
+    {
+        static $carrierCache = [];
+        
+        if (isset($carrierCache[$carrierId])) {
+            return $carrierCache[$carrierId];
+        }
+        
+        try {
+            $config = $this->integrationService->runtimeConfig(Integration::query()->first());
+            $url = $this->buildApiUrl($config, "carriers/$carrierId");
+            
+            $response = $this->httpClient->get($url, [
+                'auth' => [$config['api_key'], ''],
+                'headers' => ['Accept' => 'application/xml']
+            ]);
+            
+            $xml = simplexml_load_string($response->getBody()->getContents());
+            if (isset($xml->carrier)) {
+                $carrier = $this->xmlToArray($xml->carrier);
+                $name = $carrier['name'] ?? null;
+                $carrierCache[$carrierId] = $name;
+                return $name;
+            }
+        } catch (\Exception $e) {
+            // W przypadku błędu zwróć null
+        }
+        
+        return null;
+    }
+
+    /**
+     * Pobiera dane o paczkomacie InPost dla danego koszyka
+     * Wymaga bezpośredniego dostępu do bazy PrestaShop
+     */
+    protected function fetchInPostParcelLocker(string $cartId): ?array
+    {
+        try {
+            $config = $this->integrationService->runtimeConfig(Integration::query()->first());
+            
+            // Sprawdź czy mamy dane do połączenia z bazą
+            if (empty($config['db_host']) || empty($config['db_name'])) {
+                return null;
+            }
+            
+            $prefix = $config['db_prefix'] ?? 'ps_';
+            
+            // Połącz się z bazą PrestaShop
+            $dsn = sprintf(
+                'mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4',
+                $config['db_host'],
+                $config['db_port'] ?? 3306,
+                $config['db_name']
+            );
+            
+            $pdo = new \PDO($dsn, $config['db_username'], $config['db_password'], [
+                \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+            ]);
+            
+            // Zapytanie o dane InPost - tabela może mieć różne prefiksy
+            $stmt = $pdo->prepare("SELECT machine, tracking_number FROM {$prefix}pminpostpaczkomatylist WHERE id_cart = ? LIMIT 1");
+            $stmt->execute([$cartId]);
+            $result = $stmt->fetch(\PDO::FETCH_ASSOC);
+            
+            if ($result && !empty($result['machine'])) {
+                return $result;
+            }
+        } catch (\Exception $e) {
+            // Loguj błąd ale nie przerywaj procesu
+            logger()->debug("Nie udało się pobrać danych InPost dla koszyka $cartId: " . $e->getMessage());
+        }
+        
+        return null;
     }
 
     public function validateOrderImportAccess(Integration $integration): bool
@@ -434,7 +624,9 @@ class PrestashopApiOrderImportDriver implements OrderImportDriver
 
     protected function buildApiUrl(array $config, string $resource, array $params = []): string
     {
-        $baseUrl = rtrim($config['shop_url'], '/') . '/api/' . $resource;
+        // `base_url` jest standardem w konfiguracji integracji; pozostawiamy `shop_url` jako fallback
+        $shopBase = $config['base_url'] ?? $config['shop_url'] ?? '';
+        $baseUrl = rtrim($shopBase, '/') . '/api/' . $resource;
         
         if (!empty($params)) {
             $baseUrl .= '?' . http_build_query($params);
@@ -445,13 +637,107 @@ class PrestashopApiOrderImportDriver implements OrderImportDriver
 
     protected function xmlToArray($xmlObject): array
     {
-        $array = json_decode(json_encode($xmlObject), true);
+        // Konwertuj SimpleXMLElement do tablicy z zachowaniem wartości CDATA
+        $array = [];
         
-        // Usuń atrybuty XML które nie są potrzebne
-        if (isset($array['@attributes'])) {
-            unset($array['@attributes']);
+        // Jeśli to nie jest obiekt SimpleXML, zwróć pusty array
+        if (!($xmlObject instanceof \SimpleXMLElement)) {
+            return [];
+        }
+        
+        // Iteruj przez dzieci elementu
+        foreach ($xmlObject->children() as $key => $value) {
+            // Jeśli element ma dzieci, rekursywnie przetwórz
+            if ($value->count() > 0) {
+                // Sprawdź czy to jest tablica elementów (wielokrotne wystąpienia tego samego klucza)
+                if (isset($array[$key])) {
+                    if (!is_array($array[$key]) || !isset($array[$key][0])) {
+                        $array[$key] = [$array[$key]];
+                    }
+                    $array[$key][] = $this->xmlToArray($value);
+                } else {
+                    $array[$key] = $this->xmlToArray($value);
+                }
+            } else {
+                // Element bez dzieci - pobierz wartość tekstową (z CDATA)
+                $textValue = (string)$value;
+                
+                if (isset($array[$key])) {
+                    if (!is_array($array[$key]) || !isset($array[$key][0])) {
+                        $array[$key] = [$array[$key]];
+                    }
+                    $array[$key][] = $textValue;
+                } else {
+                    $array[$key] = $textValue;
+                }
+            }
+        }
+        
+        return $array;
+    }
+
+    /**
+     * Wyciąga wartość skalarną z potencjalnie zagnieżdżonej struktury XML
+     * PrestaShop API czasem zwraca wartości jako tablice zamiast stringów
+     */
+    protected function extractScalarValue($value): string
+    {
+        if (is_array($value)) {
+            // Pusta tablica = pusta wartość
+            if (empty($value)) {
+                return '';
+            }
+            // Jeśli to tablica z kluczem 0, zwróć ten element (rekurencyjnie)
+            if (isset($value[0])) {
+                return $this->extractScalarValue($value[0]);
+            }
+            // Jeśli to tablica z kluczem 'value', zwróć go (rekurencyjnie)
+            if (isset($value['value'])) {
+                return $this->extractScalarValue($value['value']);
+            }
+            // Jeśli to tablica asocjacyjna z jednym elementem, spróbuj go wydobyć
+            if (count($value) === 1) {
+                $first = reset($value);
+                return $this->extractScalarValue($first);
+            }
+            // W przeciwnym razie zwróć pierwszy element
+            $first = reset($value);
+            // Jeśli pierwszy element to też tablica lub obiekt, spróbuj rekurencyjnie
+            if (is_array($first)) {
+                return $this->extractScalarValue($first);
+            }
+            if (is_object($first)) {
+                return '';
+            }
+            return (string)$first;
+        }
+        return (string)$value;
+    }
+
+    /**
+     * Waliduje datę z PrestaShop - odrzuca nieprawidłowe daty jak '0000-00-00 00:00:00'
+     */
+    protected function validateDate(?string $date): ?string
+    {
+        if (empty($date)) {
+            return null;
         }
 
-        return $array;
+        // PrestaShop używa '0000-00-00 00:00:00' dla pustych dat
+        if (str_starts_with($date, '0000-00-00') || str_starts_with($date, '-0001')) {
+            return null;
+        }
+
+        // Sprawdź czy data jest prawidłowa
+        try {
+            $parsed = new \DateTime($date);
+            // Sprawdź czy rok jest rozsądny (nie ujemny, nie za duży)
+            if ($parsed->format('Y') < 1970 || $parsed->format('Y') > 2100) {
+                return null;
+            }
+            return $date;
+        } catch (\Exception $e) {
+            return null;
+        }
     }
 }

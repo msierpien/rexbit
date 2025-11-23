@@ -16,7 +16,7 @@ use Illuminate\Validation\Rule;
 
 class WarehouseDocumentService
 {
-    private array $supportedTypes = ['PZ', 'WZ', 'IN', 'OUT'];
+    private array $supportedTypes = ['PZ', 'WZ', 'IN', 'OUT', 'RES'];
 
     public function __construct(
         private ValidationFactory $validator,

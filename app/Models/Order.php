@@ -42,6 +42,7 @@ class Order extends Model
         'invoice_data',
         'is_company',
         'order_date',
+        'paid_at',
         'shipped_at',
         'completed_at'
     ];
@@ -54,6 +55,7 @@ class Order extends Model
         'is_paid' => 'boolean',
         'is_company' => 'boolean',
         'order_date' => 'datetime',
+        'paid_at' => 'datetime',
         'shipped_at' => 'datetime',
         'completed_at' => 'datetime',
         'total_net' => 'decimal:4',

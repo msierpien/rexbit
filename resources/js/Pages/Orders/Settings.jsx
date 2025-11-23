@@ -8,17 +8,16 @@ export default function OrdersSettings() {
     const [importing, setImporting] = useState({});
     const [importLogs, setImportLogs] = useState({});
 
+    const updateIntegrationConfig = (integrationId, configPatch) => {
+        router.put(`/integrations/${integrationId}`, { config: configPatch }, { preserveScroll: true });
+    };
+
     const handleToggleImport = (integrationId, enabled) => {
-        router.put(`/integrations/${integrationId}`, {
-            config: {
-                order_import_enabled: enabled
-            }
-        }, {
-            preserveScroll: true,
-            onSuccess: () => {
-                // Powiadomienie zostanie pokazane przez flash message
-            }
-        });
+        updateIntegrationConfig(integrationId, { order_import_enabled: enabled });
+    };
+
+    const handleToggleAutoReservation = (integrationId, enabled) => {
+        updateIntegrationConfig(integrationId, { create_reservation_on_import: enabled });
     };
 
     const handleRunImport = async (integrationId) => {
@@ -205,6 +204,23 @@ export default function OrdersSettings() {
                                                     {integration.order_import_enabled ? 'Włączony' : 'Wyłączony'}
                                                 </span>
                                             </label>
+
+                                            {/* Auto rezerwacja */}
+                                            <div className="flex items-center gap-3">
+                                                <label className="relative inline-flex items-center cursor-pointer">
+                                                    <input
+                                                        type="checkbox"
+                                                        className="sr-only peer"
+                                                        checked={integration.create_reservation_on_import}
+                                                        onChange={(e) => handleToggleAutoReservation(integration.id, e.target.checked)}
+                                                        disabled={!integration.order_import_enabled}
+                                                    />
+                                                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+                                                    <span className="ml-3 text-sm font-medium text-gray-900 dark:text-gray-300">
+                                                        Auto rezerwacja przy imporcie
+                                                    </span>
+                                                </label>
+                                            </div>
 
                                             {/* Manual Import Button */}
                                             {integration.order_import_enabled && (
